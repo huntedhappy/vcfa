@@ -56,6 +56,9 @@ layout:
                 visible: true
                 read-only: false
               signpostPosition: right-middle
+      title: 1. 기본 설정
+    - id: page_storage
+      sections:
         - id: 4. Storage Settings (공통)
           fields:
             - id: storageclass
@@ -513,6 +516,9 @@ layout:
                     value: false
                 read-only: false
               signpostPosition: right-middle
+      title: 2. 스토리지
+    - id: page_app
+      sections:
         - id: 5. Credentials (인증 정보)
           fields:
             - id: adminUser
@@ -559,7 +565,7 @@ layout:
                 visible: true
                 read-only: false
               signpostPosition: right-middle
-        - id: section_cbe4069c
+        - id: 7. Repository Overrides (저장소 선택)
           fields:
             - id: aptMirror
               display: textField
@@ -579,7 +585,7 @@ layout:
                       image: photon
                     value: true
               signpostPosition: right-middle
-      title: Web VM 배포 요청
+      title: 3. OS / 앱 설정
 schema:
   projects:
     label: Project Name
