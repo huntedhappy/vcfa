@@ -1,0 +1,921 @@
+formatVersion: 1
+inputs:
+  projects:
+    type: string
+    title: Project Name
+    $data: /data/vro-actions/com.vmk.dk/getProjectsNames
+  namespace:
+    type: string
+    title: Namespace Name
+    $data: /data/vro-actions/com.vmk.dk/getNamespaces?ProjectName={{projects}}
+  hostname:
+    type: string
+    title: Guest Hostname
+    default: webvm
+    description: '게스트 OS hostname과 리소스 이름 prefix로 함께 사용됩니다. 예: webvm'
+  domainname:
+    type: string
+    title: Domain Name
+    default: dtvcf.lab
+  dnsservers:
+    type: string
+    title: DNS Servers
+    description: '쉼표(,)로 여러 개 입력. 예: 10.253.100.2,10.253.100.3'
+  searchdomains:
+    type: string
+    title: Search Domains
+    description: '쉼표(,)로 여러 개 입력. 예: dtvcf.lab,dtcloud.com'
+  ssh_public_key:
+    type: string
+    title: SSH Public Key
+  adminUser:
+    type: string
+    title: OS Admin User
+    description: 접속할 OS 사용자 계정 이름. 기존 계정이면 비밀번호만 갱신되고, 없으면 생성됩니다.
+    $dynamicDefault: /data/vro-actions/com.vmk.dk/getAdminUserByImage?imageName={{image}}
+  adminPassword:
+    type: string
+    title: OS Password
+    description: '평문 비밀번호 입력 가능. 예: P@assW0rd'
+    encrypted: true
+    writeOnly: true
+  vmclass:
+    type: string
+    title: VM Class
+    default: custom-best-effort-large-4c-8g
+    $data: /data/vro-actions/com.vmk.dk/getVMClass
+  image:
+    type: string
+    title: VM Image
+    $data: /data/vro-actions/com.vmk.dk/getVMImage?targetLibraryName=vra-image
+  storageclass:
+    type: string
+    title: Storage Class
+    $data: /data/vro-actions/com.vmk.dk/getStorageClass
+  dataDiskSize:
+    type: string
+    title: Data Disk Size
+    default: 20Gi
+  aptMirror:
+    type: string
+    title: Ubuntu APT Mirror URL
+    default: http://mirror.kakao.com/ubuntu
+    description: '비워두면 이미지 기본 저장소 사용. 예: http://mirror.kakao.com/ubuntu'
+  photonRepoBaseUrl:
+    type: string
+    title: Photon Repo Base URL
+    default: https://packages.vmware.com/photon
+    description: '비워두면 이미지 기본 저장소 사용. 예: https://packages.vmware.com/photon'
+  webServer:
+    type: string
+    title: Web Server
+    default: nginx
+    oneOf:
+      - title: nginx
+        const: nginx
+      - title: apache
+        const: apache
+  timezone:
+    type: string
+    title: Timezone
+    default: Asia/Seoul
+  mountPoint:
+    type: string
+    title: Data Disk Mount Point
+    default: /data
+  fsType:
+    type: string
+    title: File System Type
+    default: auto
+    oneOf:
+      - title: Auto (Ubuntu=ext4, Photon=xfs)
+        const: auto
+      - title: ext4
+        const: ext4
+      - title: xfs
+        const: xfs
+  servicePort:
+    type: integer
+    title: LoadBalancer Port
+    default: 80
+  trustedProxyCidrs:
+    type: string
+    title: Trusted Proxy CIDRs for XFF
+    default: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+    description: Avi/LB가 전달하는 X-Forwarded-For를 신뢰할 CIDR 목록. 쉼표(,)로 구분.
+resources:
+  SupervisorNamespace:
+    type: CCI.Supervisor.Namespace
+    properties:
+      name: ${input.namespace}
+      existing: true
+  PersistentVolumeClaim:
+    type: CCI.Supervisor.Resource
+    properties:
+      context: ${resource.SupervisorNamespace.id}
+      manifest:
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: pvc-data-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+          labels:
+            app.kubernetes.io/name: ${input.hostname}-${substring(env.deploymentId, 0, 8)}
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          storageClassName: ${input.storageclass}
+          resources:
+            requests:
+              storage: ${input.dataDiskSize}
+  VirtualMachine:
+    type: CCI.Supervisor.Resource
+    dependsOn:
+      - PersistentVolumeClaim
+    properties:
+      context: ${resource.SupervisorNamespace.id}
+      manifest:
+        apiVersion: vmoperator.vmware.com/v1alpha3
+        kind: VirtualMachine
+        metadata:
+          name: ${input.hostname}-${substring(env.deploymentId, 0, 8)}
+          labels:
+            app.kubernetes.io/name: ${input.hostname}-${substring(env.deploymentId, 0, 8)}
+            vm-lb: vm-lb-selector-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+        spec:
+          className: ${input.vmclass}
+          imageName: ${input.image}
+          powerState: PoweredOn
+          storageClass: ${input.storageclass}
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: pvc-data-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+          network:
+            hostName: ${input.hostname}
+            domainName: ${input.domainname}
+            nameservers: ${split(input.dnsservers, ",")}
+            searchDomains: ${split(input.searchdomains, ",")}
+          bootstrap:
+            cloudInit:
+              cloudConfig:
+                timezone: ${input.timezone}
+                defaultUserEnabled: true
+                ssh_pwauth: true
+                disable_root: true
+                output:
+                  all: '| tee -a /var/log/cloud-init-vcfa-output.log | tee /dev/console'
+                users:
+                  - name: ${input.adminUser}
+                    lock_passwd: false
+                    sudo: ALL=(ALL) NOPASSWD:ALL
+                    shell: /bin/bash
+                    ssh_authorized_keys:
+                      - ${input.ssh_public_key}
+                write_files:
+                  - path: /usr/local/sbin/vcfa-user-init.sh
+                    owner: root:root
+                    permissions: '0700'
+                    content: |
+                      #!/usr/bin/env bash
+                      set -euo pipefail
+
+                      LOG=/var/log/vcfa-user-init.log
+                      exec > >(tee -a "$LOG" | tee /dev/console) 2>&1
+
+                      ADMIN_USER="${input.adminUser}"
+
+                      echo "[user-init] start user=${input.adminUser}"
+
+                      if id "$ADMIN_USER" >/dev/null 2>&1; then
+                        usermod -s /bin/bash "$ADMIN_USER" || true
+                      else
+                        useradd -m -s /bin/bash "$ADMIN_USER"
+                      fi
+
+                      echo "$ADMIN_USER:${input.adminPassword}" | chpasswd
+
+                      if command -v usermod >/dev/null 2>&1; then
+                        usermod -aG sudo "$ADMIN_USER" 2>/dev/null || true
+                        usermod -aG wheel "$ADMIN_USER" 2>/dev/null || true
+                      fi
+
+                      mkdir -p /etc/ssh/sshd_config.d
+                      cat >/etc/ssh/sshd_config.d/99-vcfa-password-auth.conf <<EOF
+                      PasswordAuthentication yes
+                      KbdInteractiveAuthentication yes
+                      ChallengeResponseAuthentication yes
+                      UsePAM yes
+                      PubkeyAuthentication yes
+                      EOF
+
+                      systemctl restart ssh 2>/dev/null || true
+                      systemctl restart sshd 2>/dev/null || true
+
+                      echo "[user-init] done"
+                  - path: /usr/local/sbin/vcfa-bootstrap.sh
+                    owner: root:root
+                    permissions: '0700'
+                    content: |
+                      #!/usr/bin/env bash
+                      set -euo pipefail
+
+                      LOG=/var/log/vcfa-bootstrap.log
+                      exec > >(tee -a "$LOG" | tee /dev/console) 2>&1
+
+                      detect_os_type() {
+                        if command -v apt-get >/dev/null 2>&1; then
+                          echo "ubuntu"
+                          return 0
+                        fi
+
+                        if command -v tdnf >/dev/null 2>&1; then
+                          echo "photon"
+                          return 0
+                        fi
+
+                        echo "[bootstrap] cannot detect OS type (apt-get/tdnf not found)" >&2
+                        return 1
+                      }
+
+                      OS_TYPE="$(detect_os_type)"
+                      WEB_SERVER="${input.webServer}"
+                      HOST_FQDN="${input.hostname}.${input.domainname}"
+                      TRUSTED_PROXY_CIDRS="${input.trustedProxyCidrs}"
+                      APT_MIRROR="${input.aptMirror}"
+                      PHOTON_REPO_BASE="${input.photonRepoBaseUrl}"
+                      MARKER="VCFA-READY-${substring(env.deploymentId, 0, 8)}"
+
+                      echo "[bootstrap] start"
+                      echo "[bootstrap] detected osType=$OS_TYPE webServer=$WEB_SERVER fqdn=$HOST_FQDN marker=$MARKER"
+
+                      retry() {
+                        local tries="$1"; shift
+                        local delay="$1"; shift
+                        local n=1
+                        until "$@"; do
+                          if [ "$n" -ge "$tries" ]; then
+                            echo "[bootstrap] command failed after ${tries} attempts: $*"
+                            return 1
+                          fi
+                          echo "[bootstrap] retry ${n}/${tries} failed: $*"
+                          n=$((n+1))
+                          sleep "$delay"
+                        done
+                      }
+
+                      assert_os() {
+                        case "$OS_TYPE" in
+                          ubuntu)
+                            command -v apt-get >/dev/null 2>&1 || { echo '[bootstrap] detected ubuntu but apt-get not found'; exit 1; }
+                            ;;
+                          photon)
+                            command -v tdnf >/dev/null 2>&1 || { echo '[bootstrap] detected photon but tdnf not found'; exit 1; }
+                            ;;
+                          *)
+                            echo "[bootstrap] unsupported detected OS_TYPE=$OS_TYPE"
+                            exit 1
+                            ;;
+                        esac
+                      }
+
+                      stop_other_web_services() {
+                        for svc in nginx apache2 httpd; do
+                          if systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -qx "${svc}.service"; then
+                            systemctl disable --now "$svc" || true
+                          fi
+                        done
+                      }
+
+                      write_nginx_realip_conf() {
+                        local conf_path="$1"
+                        {
+                          echo 'real_ip_header X-Forwarded-For;'
+                          echo 'real_ip_recursive on;'
+                          IFS=',' read -ra cidrs <<< "$TRUSTED_PROXY_CIDRS"
+                          for cidr in "${cidrs[@]}"; do
+                            cidr="$(echo "$cidr" | xargs)"
+                            [ -n "$cidr" ] && echo "set_real_ip_from ${cidr};"
+                          done
+                        } > "$conf_path"
+                      }
+
+                      write_apache_remoteip_conf() {
+                        local conf_path="$1"
+                        {
+                          echo 'RemoteIPHeader X-Forwarded-For'
+                          IFS=',' read -ra cidrs <<< "$TRUSTED_PROXY_CIDRS"
+                          for cidr in "${cidrs[@]}"; do
+                            cidr="$(echo "$cidr" | xargs)"
+                            [ -n "$cidr" ] && echo "RemoteIPTrustedProxy ${cidr}"
+                          done
+                          echo 'LogFormat "%a %l %u %t \"%r\" %>s %b XFF:\"%{X-Forwarded-For}i\"" combined_xff'
+                        } > "$conf_path"
+                      }
+
+                      configure_ubuntu_repo() {
+                        [ -z "$APT_MIRROR" ] && return 0
+                        echo "[bootstrap] using apt mirror: $APT_MIRROR"
+                        [ -f /etc/apt/sources.list ] && sed -i "s|http://archive.ubuntu.com/ubuntu|$APT_MIRROR|g; s|http://security.ubuntu.com/ubuntu|$APT_MIRROR|g" /etc/apt/sources.list || true
+                        [ -f /etc/apt/sources.list.d/ubuntu.sources ] && sed -i "s|http://archive.ubuntu.com/ubuntu|$APT_MIRROR|g; s|http://security.ubuntu.com/ubuntu|$APT_MIRROR|g" /etc/apt/sources.list.d/ubuntu.sources || true
+                      }
+
+                      install_base_packages_ubuntu() {
+                        export DEBIAN_FRONTEND=noninteractive
+                        configure_ubuntu_repo
+                        retry 5 10 apt-get update
+
+                        retry 5 10 apt-get install -y curl ca-certificates jq lvm2 || true
+                        retry 5 10 apt-get install -y parted util-linux xfsprogs || true
+                        retry 5 10 apt-get install -y sudo || true
+
+                        if [ "$WEB_SERVER" = "nginx" ]; then
+                          retry 5 10 apt-get install -y nginx
+                        else
+                          retry 5 10 apt-get install -y apache2 apache2-utils
+                        fi
+                      }
+
+                      install_base_packages_photon() {
+                        if [ -n "$PHOTON_REPO_BASE" ]; then
+                          echo "[bootstrap] using photon repo base: $PHOTON_REPO_BASE"
+                          cat >/etc/yum.repos.d/vcfa.repo <<EOF
+                      [vcfa-photon]
+                      name=VCFA Photon Repo
+                      baseurl=${PHOTON_REPO_BASE}/\$releasever/photon_release_\$releasever_\$basearch
+                      enabled=1
+                      gpgcheck=0
+                      EOF
+                        fi
+                        retry 5 10 tdnf makecache -y || true
+
+                        retry 5 10 tdnf install -y --nogpgcheck curl ca-certificates jq lvm2 || true
+                        retry 5 10 tdnf install -y --nogpgcheck parted util-linux xfsprogs || true
+                        retry 5 10 tdnf install -y --nogpgcheck sudo || true
+
+                        if [ "$WEB_SERVER" = "nginx" ]; then
+                          retry 5 10 tdnf install -y --nogpgcheck nginx
+                        else
+                          retry 5 10 tdnf install -y --nogpgcheck httpd
+                        fi
+                      }
+
+                      write_nginx_html() {
+                        local root_dir="$1"
+                        mkdir -p "$root_dir"
+                        chmod 755 /var/www 2>/dev/null || true
+                        chmod 755 "$root_dir"
+                        cat >"$root_dir/index.html" <<EOF
+                      <!DOCTYPE html>
+                      <html lang="ko">
+                      <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>NGINX</title>
+                        <style>
+                          body { margin:0; background:#0b0f14; color:#e6edf3; font-family:Arial,sans-serif; display:flex; justify-content:center; align-items:center; min-height:100vh; margin:0; }
+                          .wrap { width:720px; max-width:calc(100vw - 40px); background:#111827; border:1px solid #1f2937; border-radius:16px; box-shadow:0 20px 40px rgba(0,0,0,0.35); overflow:hidden; }
+                          .top { padding:20px 28px; border-bottom:4px solid #22c55e; background:#0f172a; }
+                          h1 { margin:0; font-size:34px; color:#22c55e; }
+                          .sub { margin-top:8px; color:#94a3b8; font-size:14px; }
+                          .body { padding:28px; }
+                          .grid { display:grid; grid-template-columns:180px 1fr; gap:12px 16px; }
+                          .k { color:#94a3b8; font-weight:bold; }
+                          .v { color:#f8fafc; word-break:break-all; }
+                        </style>
+                      </head>
+                      <body>
+                        <div class="wrap">
+                          <div class="top">
+                            <h1>NGINX</h1>
+                            <div class="sub">event-driven web server is running normally</div>
+                          </div>
+                          <div class="body">
+                            <div class="grid">
+                              <div class="k">Host</div><div class="v">${HOST_FQDN}</div>
+                              <div class="k">Engine</div><div class="v">nginx</div>
+                              <div class="k">Protocol</div><div class="v">HTTP</div>
+                              <div class="k">Port</div><div class="v">80</div>
+                              <div class="k">XFF</div><div class="v">enabled in logs and real IP processing</div>
+                            </div>
+                          </div>
+                        </div>
+                      </body>
+                      </html>
+                      EOF
+                        printf '%s\n' "$MARKER" > "$root_dir/healthz.txt"
+                        chmod 644 "$root_dir/index.html" "$root_dir/healthz.txt"
+                      }
+
+                      configure_nginx_ubuntu() {
+                        stop_other_web_services
+                        write_nginx_html /var/www/html
+                        mkdir -p /etc/nginx/conf.d /etc/nginx/sites-available
+                        write_nginx_realip_conf /etc/nginx/conf.d/realip.conf
+                        cat >/etc/nginx/conf.d/logformat-xff.conf <<EOF
+                      log_format xff_main '\$remote_addr realip=\$realip_remote_addr xff="\$http_x_forwarded_for" "\$request" \$status \$body_bytes_sent';
+                      EOF
+                        nginx_bin="$(command -v nginx || echo /usr/sbin/nginx)"
+                        cat >/etc/nginx/sites-available/default <<EOF
+                      server {
+                          listen 80 default_server;
+                          listen [::]:80 default_server;
+                          server_name ${HOST_FQDN} _;
+
+                          root /var/www/html;
+                          index index.html;
+
+                          access_log /var/log/nginx/access.log xff_main;
+                          error_log  /var/log/nginx/error.log warn;
+
+                          server_tokens off;
+                          keepalive_timeout 65;
+                          client_max_body_size 10m;
+
+                          add_header X-Content-Type-Options nosniff always;
+                          add_header X-Frame-Options SAMEORIGIN always;
+                          add_header Referrer-Policy no-referrer-when-downgrade always;
+
+                          location / {
+                              try_files \$uri \$uri/ =404;
+                          }
+                      }
+                      EOF
+                        "$nginx_bin" -t
+                        systemctl enable nginx
+                        systemctl restart nginx
+                      }
+
+                      configure_nginx_photon() {
+                        stop_other_web_services
+                        write_nginx_html /var/www/html
+                        mkdir -p /etc/nginx/conf.d
+
+                        rm -f /etc/nginx/conf.d/default.conf || true
+
+                        write_nginx_realip_conf /etc/nginx/conf.d/realip.conf
+                        nginx_bin="$(command -v nginx || echo /usr/sbin/nginx)"
+                        cat >/etc/nginx/nginx.conf <<EOF
+                      user nginx;
+                      worker_processes auto;
+                      error_log /var/log/nginx/error.log warn;
+                      pid /run/nginx.pid;
+
+                      events {
+                          worker_connections 1024;
+                      }
+
+                      http {
+                          include       /etc/nginx/mime.types;
+                          default_type  application/octet-stream;
+                          include /etc/nginx/conf.d/*.conf;
+
+                          log_format xff_main '\$remote_addr realip=\$realip_remote_addr xff="\$http_x_forwarded_for" "\$request" \$status \$body_bytes_sent';
+                          access_log /var/log/nginx/access.log xff_main;
+
+                          sendfile on;
+                          tcp_nopush on;
+                          keepalive_timeout 65;
+                          server_tokens off;
+
+                          server {
+                              listen 80 default_server;
+                              server_name ${HOST_FQDN} _;
+                              root /var/www/html;
+                              index index.html;
+
+                              add_header X-Content-Type-Options nosniff always;
+                              add_header X-Frame-Options SAMEORIGIN always;
+                              add_header Referrer-Policy no-referrer-when-downgrade always;
+
+                              location / {
+                                  try_files \$uri \$uri/ =404;
+                              }
+                          }
+                      }
+                      EOF
+                        "$nginx_bin" -t
+                        systemctl enable nginx
+                        systemctl restart nginx
+
+                        echo "[bootstrap] Opening port 80 for Photon OS"
+                        iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT
+                        iptables-save > /etc/systemd/scripts/iptables
+                      }
+
+                      write_apache_html() {
+                        local root_dir="$1"
+                        mkdir -p "$root_dir"
+                        chmod 755 /var/www 2>/dev/null || true
+                        chmod 755 "$root_dir"
+                        cat >"$root_dir/index.html" <<EOF
+                      <!DOCTYPE html>
+                      <html lang="ko">
+                      <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>Apache HTTP Server</title>
+                        <style>
+                          body { background:#f5f5f4; color:#1c1917; font-family:Georgia,serif; display:flex; justify-content:center; align-items:center; min-height:100vh; margin:0; }
+                          .card { width:760px; max-width:calc(100vw - 40px); background:#fff; border-left:8px solid #c2410c; padding:32px; border-radius:8px; box-shadow:0 20px 40px rgba(0,0,0,0.12); }
+                          h1 { margin:0 0 10px; font-size:36px; color:#9a3412; }
+                          .desc { color:#57534e; margin-bottom:24px; font-family:Arial,sans-serif; }
+                          table { width:100%; border-collapse:collapse; font-family:Arial,sans-serif; }
+                          th, td { text-align:left; padding:12px 10px; border-bottom:1px solid #e7e5e4; }
+                          th { width:180px; color:#78716c; }
+                        </style>
+                      </head>
+                      <body>
+                        <div class="card">
+                          <h1>Apache HTTP Server</h1>
+                          <div class="desc">process-based web server is running normally</div>
+                          <table>
+                            <tr><th>Host</th><td>${HOST_FQDN}</td></tr>
+                            <tr><th>Engine</th><td>apache</td></tr>
+                            <tr><th>Protocol</th><td>HTTP</td></tr>
+                            <tr><th>Port</th><td>80</td></tr>
+                            <tr><th>XFF</th><td>enabled in logs and remote IP processing</td></tr>
+                          </table>
+                        </div>
+                      </body>
+                      </html>
+                      EOF
+                        printf '%s\n' "$MARKER" > "$root_dir/healthz.txt"
+                        chmod 644 "$root_dir/index.html" "$root_dir/healthz.txt"
+                      }
+
+                      configure_apache_ubuntu() {
+                        stop_other_web_services
+
+                        mkdir -p /etc/apache2/conf-available /etc/apache2/sites-available /var/log/apache2
+
+                        DEFAULT_DOCROOT="/var/www/html"
+
+                        write_apache_html "$DEFAULT_DOCROOT"
+
+                        chmod 755 /var/www "$DEFAULT_DOCROOT" 2>/dev/null || true
+                        chmod 644 "$DEFAULT_DOCROOT/index.html" "$DEFAULT_DOCROOT/healthz.txt"
+
+                        a2dissite 000-default >/dev/null 2>&1 || true
+
+                        a2enmod remoteip headers rewrite >/dev/null 2>&1 || true
+
+                        cat >/etc/apache2/conf-available/vcfa-remoteip.conf <<EOF
+                      RemoteIPHeader X-Forwarded-For
+                      EOF
+
+                        IFS=',' read -ra cidrs <<< "$TRUSTED_PROXY_CIDRS"
+                        for cidr in "${cidrs[@]}"; do
+                          cidr="$(echo "$cidr" | xargs)"
+                          [ -n "$cidr" ] && echo "RemoteIPTrustedProxy ${cidr}" >> /etc/apache2/conf-available/vcfa-remoteip.conf
+                        done
+
+                        cat >>/etc/apache2/conf-available/vcfa-remoteip.conf <<'EOF'
+                      LogFormat "%a %l %u %t \"%r\" %>s %b XFF:\"%{X-Forwarded-For}i\"" combined_xff
+                      EOF
+
+                        a2enconf vcfa-remoteip >/dev/null 2>&1 || true
+
+                        cat >/etc/apache2/sites-available/000-vcfa.conf <<EOF
+                      <VirtualHost *:80>
+                          ServerName ${HOST_FQDN}
+                          ServerAlias localhost 127.0.0.1 _
+
+                          DocumentRoot ${DEFAULT_DOCROOT}
+
+                          ErrorLog \${APACHE_LOG_DIR}/error.log
+                          CustomLog \${APACHE_LOG_DIR}/access.log combined_xff
+
+                          ServerTokens Prod
+                          ServerSignature Off
+                          TraceEnable Off
+
+                          Header always set X-Content-Type-Options "nosniff"
+                          Header always set X-Frame-Options "SAMEORIGIN"
+                          Header always set Referrer-Policy "no-referrer-when-downgrade"
+
+                          Alias /healthz.txt "${DEFAULT_DOCROOT}/healthz.txt"
+
+                          <Directory "${DEFAULT_DOCROOT}">
+                              AllowOverride None
+                              Require all granted
+                          </Directory>
+
+                          <Location "/healthz.txt">
+                              Require all granted
+                          </Location>
+                      </VirtualHost>
+                      EOF
+
+                        a2ensite 000-vcfa >/dev/null 2>&1 || true
+
+                        apache2ctl configtest
+                        systemctl enable apache2
+                        systemctl restart apache2
+                      }
+
+                      configure_apache_photon() {
+                        stop_other_web_services
+
+                        mkdir -p /etc/httpd/conf.d /etc/httpd/conf.modules.d /var/log/httpd
+
+                        DEFAULT_DOCROOT="$(grep '^DocumentRoot' /etc/httpd/httpd.conf | awk '{print $2}' | tr -d '"')"
+                        [ -n "$DEFAULT_DOCROOT" ] || DEFAULT_DOCROOT="/etc/httpd/html"
+
+                        write_apache_html "$DEFAULT_DOCROOT"
+
+                        chmod 755 "$DEFAULT_DOCROOT"
+                        chmod 644 "$DEFAULT_DOCROOT/index.html" "$DEFAULT_DOCROOT/healthz.txt"
+
+                        grep -q '^IncludeOptional conf.modules.d/\*.conf' /etc/httpd/httpd.conf || \
+                          sed -i '1i IncludeOptional conf.modules.d/*.conf' /etc/httpd/httpd.conf
+
+                        grep -q '^IncludeOptional conf.d/\*.conf' /etc/httpd/httpd.conf || \
+                          echo 'IncludeOptional conf.d/*.conf' >> /etc/httpd/httpd.conf
+
+                        cat >/etc/httpd/conf.modules.d/00-vcfa-modules.conf <<'EOF'
+                      LoadModule remoteip_module /usr/lib/httpd/modules/mod_remoteip.so
+                      LoadModule headers_module /usr/lib/httpd/modules/mod_headers.so
+                      LoadModule rewrite_module /usr/lib/httpd/modules/mod_rewrite.so
+                      EOF
+
+                        write_apache_remoteip_conf /etc/httpd/conf.d/00-vcfa-remoteip.conf
+
+                        cat >/etc/httpd/conf.d/000-vcfa.conf <<EOF
+                      ServerTokens Prod
+                      ServerSignature Off
+                      TraceEnable Off
+
+                      Alias /healthz.txt "${DEFAULT_DOCROOT}/healthz.txt"
+
+                      <VirtualHost *:80>
+                          ServerName ${HOST_FQDN}
+                          ServerAlias localhost 127.0.0.1 _
+                          DocumentRoot ${DEFAULT_DOCROOT}
+
+                          ErrorLog /var/log/httpd/error_log
+                          CustomLog /var/log/httpd/access_log combined_xff
+
+                          Header always set X-Content-Type-Options "nosniff"
+                          Header always set X-Frame-Options "SAMEORIGIN"
+
+                          <Directory "${DEFAULT_DOCROOT}">
+                              AllowOverride None
+                              Require all granted
+                          </Directory>
+
+                          <Location "/healthz.txt">
+                              Require all granted
+                          </Location>
+                      </VirtualHost>
+                      EOF
+
+                        /usr/sbin/httpd -t
+                        systemctl enable httpd
+                        systemctl restart httpd
+
+                        echo "[bootstrap] Opening port 80 for Photon OS"
+                        iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT
+                        iptables-save > /etc/systemd/scripts/iptables
+                      }
+
+                      verify_selected_service() {
+                        if [ "$WEB_SERVER" = "nginx" ]; then
+                          systemctl is-active --quiet nginx
+                        else
+                          if systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -qx 'apache2.service'; then
+                            systemctl is-active --quiet apache2
+                          else
+                            systemctl is-active --quiet httpd
+                          fi
+                        fi
+                      }
+
+                      verify_local_http() {
+                        ss -lntp | grep -q ':80 '
+                        curl -fsS --noproxy "*" http://127.0.0.1/healthz.txt | grep -qx "$MARKER"
+                      }
+
+                      assert_os
+                      case "$OS_TYPE" in
+                        ubuntu)
+                          install_base_packages_ubuntu
+                          if [ "$WEB_SERVER" = "nginx" ]; then
+                            configure_nginx_ubuntu
+                          else
+                            configure_apache_ubuntu
+                          fi
+                          ;;
+                        photon)
+                          install_base_packages_photon
+                          if [ "$WEB_SERVER" = "nginx" ]; then
+                            configure_nginx_photon
+                          else
+                            configure_apache_photon
+                          fi
+                          ;;
+                      esac
+
+                      verify_selected_service
+                      retry 12 5 verify_local_http
+
+                      echo "[bootstrap] service status OK"
+                      echo "[bootstrap] done"
+                  - path: /usr/local/sbin/disk-init.sh
+                    owner: root:root
+                    permissions: '0700'
+                    content: |
+                      #!/usr/bin/env bash
+                      set -euo pipefail
+
+                      LOG=/var/log/disk-init.log
+                      exec > >(tee -a "$LOG" | tee /dev/console) 2>&1
+
+                      MOUNT_POINT="${input.mountPoint}"
+                      FS_TYPE="${input.fsType}"
+                      VG_NAME="vgdata"
+                      LV_NAME="lvdata"
+
+                      detect_os_type() {
+                        if command -v apt-get >/dev/null 2>&1; then
+                          echo "ubuntu"
+                          return 0
+                        fi
+
+                        if command -v tdnf >/dev/null 2>&1; then
+                          echo "photon"
+                          return 0
+                        fi
+
+                        echo "[disk-init] cannot detect OS type (apt-get/tdnf not found)" >&2
+                        return 1
+                      }
+
+                      OS_TYPE="$(detect_os_type)"
+
+                      if [ "$FS_TYPE" = "auto" ]; then
+                        if [ "$OS_TYPE" = "photon" ]; then
+                          FS_TYPE="xfs"
+                        else
+                          FS_TYPE="ext4"
+                        fi
+                        echo "[disk-init] Auto FS_TYPE resolved to: $FS_TYPE for OS: $OS_TYPE"
+                      fi
+
+                      if [ "$FS_TYPE" = "xfs" ]; then
+                        command -v mkfs.xfs >/dev/null 2>&1 || {
+                          echo "[disk-init] mkfs.xfs not found, installing xfsprogs..."
+                          if command -v apt-get >/dev/null 2>&1; then apt-get install -y xfsprogs;
+                          elif command -v tdnf >/dev/null 2>&1; then tdnf install -y --nogpgcheck xfsprogs; fi
+                        }
+                      fi
+
+                      echo "=== $(date -Is) disk-init start ==="
+
+                      for host in /sys/class/scsi_host/host*; do
+                        echo "- - -" > "${host}/scan" || true
+                      done
+                      udevadm settle || true
+
+                      ROOT_SRC="$(findmnt -n -o SOURCE / || true)"
+                      ROOT_DISK="$(lsblk -no PKNAME "$ROOT_SRC" 2>/dev/null || true)"
+
+                      CANDIDATE=""
+                      while read -r name type; do
+                        [ "$type" = "disk" ] || continue
+                        [ -n "$ROOT_DISK" ] && [ "$name" = "$ROOT_DISK" ] && continue
+
+                        dev="/dev/$name"
+
+                        if lsblk -n "$dev" -o NAME | tail -n +2 | grep -q .; then
+                          continue
+                        fi
+                        if blkid "$dev" >/dev/null 2>&1; then
+                          continue
+                        fi
+
+                        CANDIDATE="$dev"
+                        break
+                      done < <(lsblk -dn -o NAME,TYPE)
+
+                      if [ -z "$CANDIDATE" ]; then
+                        echo "[disk-init] no empty disk found. exit."
+                        exit 0
+                      fi
+
+                      echo "[disk-init] found: $CANDIDATE"
+
+                      command -v wipefs >/dev/null 2>&1 || {
+                        if command -v apt-get >/dev/null 2>&1; then apt-get install -y util-linux;
+                        elif command -v tdnf >/dev/null 2>&1; then tdnf install -y --nogpgcheck util-linux; fi
+                      }
+                      command -v parted >/dev/null 2>&1 || {
+                        if command -v apt-get >/dev/null 2>&1; then apt-get install -y parted;
+                        elif command -v tdnf >/dev/null 2>&1; then tdnf install -y --nogpgcheck parted; fi
+                      }
+
+                      wipefs -a "$CANDIDATE" || true
+                      parted -s "$CANDIDATE" mklabel gpt
+                      parted -s -a opt "$CANDIDATE" mkpart primary 0% 100%
+
+                      partprobe "$CANDIDATE" || true
+                      udevadm settle || true
+
+                      PART="${CANDIDATE}1"
+                      [ -b "${CANDIDATE}p1" ] && PART="${CANDIDATE}p1"
+
+                      pvs "$PART" >/dev/null 2>&1 || pvcreate -ff -y "$PART"
+                      vgs "$VG_NAME" >/dev/null 2>&1 || vgcreate "$VG_NAME" "$PART"
+                      lvs "${VG_NAME}/${LV_NAME}" >/dev/null 2>&1 || lvcreate -n "$LV_NAME" -l 100%FREE "$VG_NAME"
+
+                      LV_PATH="/dev/${VG_NAME}/${LV_NAME}"
+                      blkid "$LV_PATH" >/dev/null 2>&1 || mkfs -t "$FS_TYPE" "$LV_PATH"
+
+                      mkdir -p "$MOUNT_POINT"
+                      grep -qE "^[^#].*[[:space:]]${MOUNT_POINT}[[:space:]]" /etc/fstab || echo "${LV_PATH} ${MOUNT_POINT} ${FS_TYPE} defaults,nofail 0 2" >> /etc/fstab
+
+                      mount -a
+                      df -h "$MOUNT_POINT" || true
+                      echo "=== $(date -Is) disk-init done ==="
+                runcmd:
+                  - - bash
+                    - '-lc'
+                    - /usr/local/sbin/vcfa-user-init.sh
+                  - - bash
+                    - '-lc'
+                    - /usr/local/sbin/vcfa-bootstrap.sh
+                  - - bash
+                    - '-lc'
+                    - /usr/local/sbin/disk-init.sh
+        wait:
+          conditions:
+            - type: VirtualMachineNetworkReady
+              status: 'True'
+            - type: VirtualMachineBootstrapReady
+              status: 'True'
+  LoadBalancer:
+    type: CCI.Supervisor.Resource
+    dependsOn:
+      - VirtualMachine
+    properties:
+      context: ${resource.SupervisorNamespace.id}
+      manifest:
+        apiVersion: vmoperator.vmware.com/v1alpha3
+        kind: VirtualMachineService
+        metadata:
+          name: vm-lb-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+        spec:
+          selector:
+            vm-lb: vm-lb-selector-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+          type: LoadBalancer
+          ports:
+            - name: http
+              protocol: TCP
+              port: ${input.servicePort}
+              targetPort: 80
+  ServiceHealthCheckJob:
+    type: CCI.Supervisor.Resource
+    dependsOn:
+      - LoadBalancer
+    properties:
+      context: ${resource.SupervisorNamespace.id}
+      manifest:
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: check-service-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+        spec:
+          ttlSecondsAfterFinished: 10
+          backoffLimit: 30
+          activeDeadlineSeconds: 900
+          template:
+            spec:
+              restartPolicy: Never
+              containers:
+                - name: checker
+                  image: busybox:latest
+                  command:
+                    - /bin/sh
+                    - '-c'
+                  args:
+                    - |
+                      set -eu
+
+                      TARGET="http://vm-lb-${input.hostname}-${substring(env.deploymentId, 0, 8)}/healthz.txt"
+                      MARKER="VCFA-READY-${substring(env.deploymentId, 0, 8)}"
+
+                      echo "Waiting for Web Service to be ready..."
+                      i=0
+                      while true; do
+                        if wget -q -T 5 -O - "$TARGET" | grep -q "$MARKER"; then
+                          echo "Service is UP and Ready!"
+                          exit 0
+                        fi
+
+                        i=$((i+1))
+                        echo "Service not ready yet. Retrying in 10 seconds... ($i)"
+                        sleep 10
+                      done
+      wait:
+        conditions:
+          - type: Complete
+            status: 'True'

@@ -1,0 +1,986 @@
+layout:
+  pages:
+    - id: page_general
+      sections:
+        - id: 1. Environment (환경 설정)
+          fields:
+            - id: projects
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: namespace
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+        - id: 2. Compute Spec (컴퓨팅 사양)
+          fields:
+            - id: vmclass
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: vmCount
+              display: integerField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: image
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+        - id: 3. Network Settings (네트워크 설정)
+          fields:
+            - id: hostname
+              display: textField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: domainname
+              display: textField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: dnsservers
+              display: textField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: searchdomains
+              display: textField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+      title: 1. 기본 설정
+    - id: page_storage
+      sections:
+        - id: 4. Storage Settings (공통)
+          fields:
+            - id: storageclass
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: dataDiskCount
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: useCommonDataStorageclass
+              display: checkbox
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: true
+                  - equals:
+                      dataDiskCount: 2
+                    value: true
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: dataDiskLayout
+              display: dropDown
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: false
+                  - equals:
+                      dataDiskCount: 2
+                    value: true
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: commonDataStorageclass
+              display: dropDown
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: true
+                  - equals:
+                      dataDiskCount: 2
+                    value: true
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                  - equals:
+                      useCommonDataStorageclass: true
+                    value: true
+                  - equals:
+                      useCommonDataStorageclass: false
+                    value: false
+                read-only: false
+              signpostPosition: right-middle
+        - id: 4-1. Data Disk 1
+          fields:
+            - id: dataStorageclass
+              display: dropDown
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: true
+                  - equals:
+                      dataDiskCount: 2
+                    value: true
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                  - equals:
+                      useCommonDataStorageclass: true
+                    value: false
+                read-only: false
+              signpostPosition: right-middle
+            - id: dataDiskSize
+              display: textField
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: true
+                  - equals:
+                      dataDiskCount: 2
+                    value: true
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: mountPoint
+              display: textField
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: true
+                  - equals:
+                      dataDiskCount: 2
+                    value: true
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: fsType
+              display: dropDown
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: true
+                  - equals:
+                      dataDiskCount: 2
+                    value: true
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                read-only: false
+              signpostPosition: right-middle
+        - id: 4-2. Data Disk 2
+          fields:
+            - id: dataStorageclass2
+              display: dropDown
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: false
+                  - equals:
+                      dataDiskCount: 2
+                    value: true
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                  - equals:
+                      useCommonDataStorageclass: true
+                    value: false
+                read-only: false
+              signpostPosition: right-middle
+            - id: dataDiskSize2
+              display: textField
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: false
+                  - equals:
+                      dataDiskCount: 2
+                    value: true
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: mountPoint2
+              display: textField
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: false
+                  - equals:
+                      dataDiskCount: 2
+                    value: true
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                  - equals:
+                      dataDiskLayout: merged
+                    value: false
+                read-only: false
+              signpostPosition: right-middle
+            - id: fsType2
+              display: dropDown
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: false
+                  - equals:
+                      dataDiskCount: 2
+                    value: true
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                  - equals:
+                      dataDiskLayout: merged
+                    value: false
+                read-only: false
+              signpostPosition: right-middle
+        - id: 4-3. Data Disk 3
+          fields:
+            - id: dataStorageclass3
+              display: dropDown
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: false
+                  - equals:
+                      dataDiskCount: 2
+                    value: false
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                  - equals:
+                      useCommonDataStorageclass: true
+                    value: false
+                read-only: false
+              signpostPosition: right-middle
+            - id: dataDiskSize3
+              display: textField
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: false
+                  - equals:
+                      dataDiskCount: 2
+                    value: false
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: mountPoint3
+              display: textField
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: false
+                  - equals:
+                      dataDiskCount: 2
+                    value: false
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                  - equals:
+                      dataDiskLayout: merged
+                    value: false
+                read-only: false
+              signpostPosition: right-middle
+            - id: fsType3
+              display: dropDown
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: false
+                  - equals:
+                      dataDiskCount: 2
+                    value: false
+                  - equals:
+                      dataDiskCount: 3
+                    value: true
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                  - equals:
+                      dataDiskLayout: merged
+                    value: false
+                read-only: false
+              signpostPosition: right-middle
+        - id: 4-4. Data Disk 4
+          fields:
+            - id: dataStorageclass4
+              display: dropDown
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: false
+                  - equals:
+                      dataDiskCount: 2
+                    value: false
+                  - equals:
+                      dataDiskCount: 3
+                    value: false
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                  - equals:
+                      useCommonDataStorageclass: true
+                    value: false
+                read-only: false
+              signpostPosition: right-middle
+            - id: dataDiskSize4
+              display: textField
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: false
+                  - equals:
+                      dataDiskCount: 2
+                    value: false
+                  - equals:
+                      dataDiskCount: 3
+                    value: false
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: mountPoint4
+              display: textField
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: false
+                  - equals:
+                      dataDiskCount: 2
+                    value: false
+                  - equals:
+                      dataDiskCount: 3
+                    value: false
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                  - equals:
+                      dataDiskLayout: merged
+                    value: false
+                read-only: false
+              signpostPosition: right-middle
+            - id: fsType4
+              display: dropDown
+              state:
+                visible:
+                  - equals:
+                      dataDiskCount: 0
+                    value: false
+                  - equals:
+                      dataDiskCount: 1
+                    value: false
+                  - equals:
+                      dataDiskCount: 2
+                    value: false
+                  - equals:
+                      dataDiskCount: 3
+                    value: false
+                  - equals:
+                      dataDiskCount: 4
+                    value: true
+                  - equals:
+                      dataDiskLayout: merged
+                    value: false
+                read-only: false
+              signpostPosition: right-middle
+      title: 2. 스토리지
+    - id: page_app
+      sections:
+        - id: 5. Credentials (인증 정보)
+          fields:
+            - id: adminUser
+              display: textField
+              state:
+                visible: true
+                read-only: true
+              signpostPosition: right-middle
+            - id: adminPassword
+              display: passwordField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: ssh_public_key
+              display: textField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+        - id: 6. Application Config (앱 및 추가 구성)
+          fields:
+            - id: webServer
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: servicePort
+              display: integerField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: trustedProxyCidrs
+              display: textField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: timezone
+              display: textField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+        - id: 7. Repository Overrides (저장소 선택)
+          fields:
+            - id: aptMirror
+              display: textField
+              state:
+                read-only: false
+                visible:
+                  - contains:
+                      image: ubuntu
+                    value: true
+              signpostPosition: right-middle
+            - id: photonRepoBaseUrl
+              display: textField
+              state:
+                read-only: false
+                visible:
+                  - contains:
+                      image: photon
+                    value: true
+              signpostPosition: right-middle
+      title: 3. OS / 앱 설정
+schema:
+  projects:
+    label: Project Name
+    type:
+      dataType: string
+      isMultiple: false
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getProjectsNames
+      type: dynamic
+      parameters: []
+    constraints:
+      required: true
+  namespace:
+    label: Namespace Name
+    type:
+      dataType: string
+      isMultiple: false
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getNamespaces
+      type: dynamic
+      parameters:
+        - $type:
+            dataType: string
+            isMultiple: false
+          ProjectName: projects
+      isPageable: false
+    constraints:
+      required: true
+  hostname:
+    label: Guest Hostname
+    description: '게스트 OS hostname과 리소스 이름 prefix로 함께 사용됩니다. 예: webvm'
+    signpost: '게스트 OS hostname과 리소스 이름 prefix로 함께 사용됩니다. 예: webvm'
+    type:
+      dataType: string
+      isMultiple: false
+    default: webvm
+  domainname:
+    label: Domain Name
+    type:
+      dataType: string
+      isMultiple: false
+    default: dtvcf.lab
+  dnsservers:
+    label: DNS Servers
+    description: '쉼표(,)로 여러 개 입력. 예: 10.253.100.2,10.253.100.3'
+    signpost: '쉼표(,)로 여러 개 입력. 예: 10.253.100.2,10.253.100.3'
+    type:
+      dataType: string
+      isMultiple: false
+    constraints:
+      required: true
+  searchdomains:
+    label: Search Domains
+    description: '쉼표(,)로 여러 개 입력. 예: dtvcf.lab,dtcloud.com'
+    signpost: '쉼표(,)로 여러 개 입력. 예: dtvcf.lab,dtcloud.com'
+    type:
+      dataType: string
+      isMultiple: false
+    constraints:
+      required: true
+  ssh_public_key:
+    label: SSH Public Key
+    type:
+      dataType: string
+      isMultiple: false
+    constraints:
+      required: true
+  adminUser:
+    label: OS Admin User
+    description: 접속할 OS 사용자 계정 이름. 기존 계정이면 비밀번호만 갱신되고, 없으면 생성됩니다.
+    signpost: 접속할 OS 사용자 계정 이름. 기존 계정이면 비밀번호만 갱신되고, 없으면 생성됩니다.
+    type:
+      dataType: string
+      isMultiple: false
+    default:
+      id: /data/vro-actions/com.vmk.dk/getAdminUserByImage
+      type: dynamic
+      parameters:
+        - $type:
+            dataType: string
+            isMultiple: false
+          imageName: image
+      isPageable: false
+  adminPassword:
+    label: OS Password
+    description: '평문 비밀번호 입력 가능. 예: P@assW0rd'
+    signpost: '평문 비밀번호 입력 가능. 예: P@assW0rd'
+    type:
+      dataType: secureString
+      isMultiple: false
+    constraints:
+      required: true
+  vmclass:
+    label: VM Class
+    type:
+      dataType: string
+      isMultiple: false
+    default: custom-best-effort-large-4c-8g
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getVMClass
+      type: dynamic
+      parameters: []
+  vmCount:
+    label: VM Count
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 2
+  image:
+    label: VM Image
+    type:
+      dataType: string
+      isMultiple: false
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getVMImage
+      type: dynamic
+      parameters:
+        - $type:
+            dataType: string
+            isMultiple: false
+          targetLibraryName: '`vra-image`'
+      isPageable: false
+    constraints:
+      required: true
+  storageclass:
+    label: OS Disk Storage Class
+    type:
+      dataType: string
+      isMultiple: false
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getStorageClass
+      type: dynamic
+      parameters: []
+    constraints:
+      required: true
+  useCommonDataStorageclass:
+    label: Use Common Data Disk Storage Class (공통 사용)
+    type:
+      dataType: boolean
+      isMultiple: false
+    default: true
+  commonDataStorageclass:
+    label: Common Data Disk Storage Class
+    description: 공통 사용 시 모든 데이터 디스크에 적용됩니다. 비워두면 OS Disk Storage Class 값을 사용합니다.
+    signpost: 공통 사용 시 모든 데이터 디스크에 적용됩니다. 비워두면 OS Disk Storage Class 값을 사용합니다.
+    type:
+      dataType: string
+      isMultiple: false
+    default: __inherit__
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getStorageClassOptional
+      type: dynamic
+      parameters: []
+    constraints:
+      required: false
+  dataStorageclass:
+    label: Data Disk 1 Storage Class
+    description: 개별 사용 시 Disk 1에 적용됩니다. 비워두면 OS Disk Storage Class 값을 사용합니다.
+    signpost: 개별 사용 시 Disk 1에 적용됩니다. 비워두면 OS Disk Storage Class 값을 사용합니다.
+    type:
+      dataType: string
+      isMultiple: false
+    default: __inherit__
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getStorageClassOptional
+      type: dynamic
+      parameters: []
+    constraints:
+      required: false
+  dataDiskCount:
+    label: Data Disk Count
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 0
+    valueList:
+      - value: 0
+        label: '0'
+      - value: 1
+        label: '1'
+      - value: 2
+        label: '2'
+      - value: 3
+        label: '3'
+      - value: 4
+        label: '4'
+  dataDiskLayout:
+    label: Data Disk Layout
+    type:
+      dataType: string
+      isMultiple: false
+    default: separate
+    valueList:
+      - value: separate
+        label: Separate (disk별 개별 마운트)
+      - value: merged
+        label: Merged (LVM으로 하나로 통합)
+  dataDiskSize:
+    label: Data Disk 1 Size
+    type:
+      dataType: string
+      isMultiple: false
+    default: 20Gi
+  dataDiskSize2:
+    label: Data Disk 2 Size
+    type:
+      dataType: string
+      isMultiple: false
+    default: 20Gi
+  dataStorageclass2:
+    label: Data Disk 2 Storage Class
+    description: 개별 사용 시 Disk 2에 적용됩니다. 비워두면 Disk 1 또는 OS Disk Storage Class 값을 사용합니다.
+    signpost: 개별 사용 시 Disk 2에 적용됩니다. 비워두면 Disk 1 또는 OS Disk Storage Class 값을 사용합니다.
+    type:
+      dataType: string
+      isMultiple: false
+    default: __inherit__
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getStorageClassOptional
+      type: dynamic
+      parameters: []
+    constraints:
+      required: false
+  mountPoint2:
+    label: Data Disk 2 Mount Point (Separate)
+    type:
+      dataType: string
+      isMultiple: false
+    default: /data2
+  fsType2:
+    label: Data Disk 2 File System Type (Separate)
+    type:
+      dataType: string
+      isMultiple: false
+    default: auto
+    valueList:
+      - value: auto
+        label: Auto (Ubuntu=ext4, Photon=xfs)
+      - value: ext4
+        label: ext4
+      - value: xfs
+        label: xfs
+  dataDiskSize3:
+    label: Data Disk 3 Size
+    type:
+      dataType: string
+      isMultiple: false
+    default: 20Gi
+  dataStorageclass3:
+    label: Data Disk 3 Storage Class
+    description: 개별 사용 시 Disk 3에 적용됩니다. 비워두면 Disk 1 또는 OS Disk Storage Class 값을 사용합니다.
+    signpost: 개별 사용 시 Disk 3에 적용됩니다. 비워두면 Disk 1 또는 OS Disk Storage Class 값을 사용합니다.
+    type:
+      dataType: string
+      isMultiple: false
+    default: __inherit__
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getStorageClassOptional
+      type: dynamic
+      parameters: []
+    constraints:
+      required: false
+  mountPoint3:
+    label: Data Disk 3 Mount Point (Separate)
+    type:
+      dataType: string
+      isMultiple: false
+    default: /data3
+  fsType3:
+    label: Data Disk 3 File System Type (Separate)
+    type:
+      dataType: string
+      isMultiple: false
+    default: auto
+    valueList:
+      - value: auto
+        label: Auto (Ubuntu=ext4, Photon=xfs)
+      - value: ext4
+        label: ext4
+      - value: xfs
+        label: xfs
+  dataDiskSize4:
+    label: Data Disk 4 Size
+    type:
+      dataType: string
+      isMultiple: false
+    default: 20Gi
+  dataStorageclass4:
+    label: Data Disk 4 Storage Class
+    description: 개별 사용 시 Disk 4에 적용됩니다. 비워두면 Disk 1 또는 OS Disk Storage Class 값을 사용합니다.
+    signpost: 개별 사용 시 Disk 4에 적용됩니다. 비워두면 Disk 1 또는 OS Disk Storage Class 값을 사용합니다.
+    type:
+      dataType: string
+      isMultiple: false
+    default: __inherit__
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getStorageClassOptional
+      type: dynamic
+      parameters: []
+    constraints:
+      required: false
+  mountPoint4:
+    label: Data Disk 4 Mount Point (Separate)
+    type:
+      dataType: string
+      isMultiple: false
+    default: /data4
+  fsType4:
+    label: Data Disk 4 File System Type (Separate)
+    type:
+      dataType: string
+      isMultiple: false
+    default: auto
+    valueList:
+      - value: auto
+        label: Auto (Ubuntu=ext4, Photon=xfs)
+      - value: ext4
+        label: ext4
+      - value: xfs
+        label: xfs
+  aptMirror:
+    label: Ubuntu APT Mirror URL
+    description: '비워두면 이미지 기본 저장소 사용. 예: http://mirror.kakao.com/ubuntu'
+    signpost: '비워두면 이미지 기본 저장소 사용. 예: http://mirror.kakao.com/ubuntu'
+    type:
+      dataType: string
+      isMultiple: false
+    default: http://mirror.kakao.com/ubuntu
+    constraints:
+      required: false
+  photonRepoBaseUrl:
+    label: Photon Repo Base URL
+    description: '비워두면 이미지 기본 저장소 사용. 예: https://packages.vmware.com/photon'
+    signpost: '비워두면 이미지 기본 저장소 사용. 예: https://packages.vmware.com/photon'
+    type:
+      dataType: string
+      isMultiple: false
+    default: https://packages.vmware.com/photon
+    constraints:
+      required: false
+  webServer:
+    label: Web Server
+    type:
+      dataType: string
+      isMultiple: false
+    default: nginx
+    valueList:
+      - value: nginx
+        label: nginx
+      - value: apache
+        label: apache
+  timezone:
+    label: Timezone
+    type:
+      dataType: string
+      isMultiple: false
+    default: Asia/Seoul
+  mountPoint:
+    label: Data Disk 1 Mount Point
+    type:
+      dataType: string
+      isMultiple: false
+    default: /data
+  fsType:
+    label: Data Disk 1 File System Type
+    type:
+      dataType: string
+      isMultiple: false
+    default: auto
+    valueList:
+      - value: auto
+        label: Auto (Ubuntu=ext4, Photon=xfs)
+      - value: ext4
+        label: ext4
+      - value: xfs
+        label: xfs
+  servicePort:
+    label: LoadBalancer Port
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 80
+  trustedProxyCidrs:
+    label: Trusted Proxy CIDRs for XFF
+    description: Avi/LB가 전달하는 X-Forwarded-For를 신뢰할 CIDR 목록. 쉼표(,)로 구분.
+    signpost: Avi/LB가 전달하는 X-Forwarded-For를 신뢰할 CIDR 목록. 쉼표(,)로 구분.
+    type:
+      dataType: string
+      isMultiple: false
+    default: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+options:
+  externalValidations: []

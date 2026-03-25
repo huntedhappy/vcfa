@@ -44,6 +44,12 @@ inputs:
     title: VM Class
     default: custom-best-effort-large-4c-8g
     $data: /data/vro-actions/com.vmk.dk/getVMClass
+  vmCount:
+    type: integer
+    title: VM Count
+    default: 2
+    minimum: 1
+    maximum: 10
   image:
     type: string
     title: VM Image
@@ -51,7 +57,7 @@ inputs:
   storageclass:
     type: string
     title: OS Disk Storage Class
-    $data: /data/vro-actions/com.vmk.dk/getStroageClassManual
+    $data: /data/vro-actions/com.vmk.dk/getStorageClass
   useCommonDataStorageclass:
     type: boolean
     title: Use Common Data Disk Storage Class (공통 사용)
@@ -61,31 +67,31 @@ inputs:
     title: Common Data Disk Storage Class
     default: __inherit__
     description: '공통 사용 시 모든 데이터 디스크에 적용. 비워두면 OS Disk Storage Class 값을 사용'
-    $data: /data/vro-actions/com.vmk.dk/getStroageClassManualOptionals
+    $data: /data/vro-actions/com.vmk.dk/getStorageClassOptional
   dataStorageclass:
     type: string
     title: Data Disk 1 Storage Class
     default: __inherit__
     description: '개별 사용 시 Disk 1 전용. 비워두면 OS Disk Storage Class 값을 사용'
-    $data: /data/vro-actions/com.vmk.dk/getStroageClassManualOptionals
+    $data: /data/vro-actions/com.vmk.dk/getStorageClassOptional
   dataStorageclass2:
     type: string
     title: Data Disk 2 Storage Class
     default: __inherit__
     description: '개별 사용 시 Disk 2 전용. 비워두면 Disk 1 또는 OS Disk Storage Class 값을 사용'
-    $data: /data/vro-actions/com.vmk.dk/getStroageClassManualOptionals
+    $data: /data/vro-actions/com.vmk.dk/getStorageClassOptional
   dataStorageclass3:
     type: string
     title: Data Disk 3 Storage Class
     default: __inherit__
     description: '개별 사용 시 Disk 3 전용. 비워두면 Disk 1 또는 OS Disk Storage Class 값을 사용'
-    $data: /data/vro-actions/com.vmk.dk/getStroageClassManualOptionals
+    $data: /data/vro-actions/com.vmk.dk/getStorageClassOptional
   dataStorageclass4:
     type: string
     title: Data Disk 4 Storage Class
     default: __inherit__
     description: '개별 사용 시 Disk 4 전용. 비워두면 Disk 1 또는 OS Disk Storage Class 값을 사용'
-    $data: /data/vro-actions/com.vmk.dk/getStroageClassManualOptionals
+    $data: /data/vro-actions/com.vmk.dk/getStorageClassOptional
   dataDiskCount:
     type: integer
     title: Data Disk Count
@@ -226,7 +232,7 @@ resources:
       existing: true
   PersistentVolumeClaim:
     type: CCI.Supervisor.Resource
-    condition: '${input.dataDiskCount >= 1}'
+    count: '${input.dataDiskCount >= 1 ? 1 : 0}'
     properties:
       context: ${resource.SupervisorNamespace.id}
       manifest:
@@ -245,7 +251,7 @@ resources:
               storage: ${input.dataDiskSize}
   PersistentVolumeClaim2:
     type: CCI.Supervisor.Resource
-    condition: '${input.dataDiskCount >= 2}'
+    count: '${input.dataDiskCount >= 2 ? 1 : 0}'
     properties:
       context: ${resource.SupervisorNamespace.id}
       manifest:
@@ -264,7 +270,7 @@ resources:
               storage: ${input.dataDiskSize2}
   PersistentVolumeClaim3:
     type: CCI.Supervisor.Resource
-    condition: '${input.dataDiskCount >= 3}'
+    count: '${input.dataDiskCount >= 3 ? 1 : 0}'
     properties:
       context: ${resource.SupervisorNamespace.id}
       manifest:
@@ -283,7 +289,7 @@ resources:
               storage: ${input.dataDiskSize3}
   PersistentVolumeClaim4:
     type: CCI.Supervisor.Resource
-    condition: '${input.dataDiskCount >= 4}'
+    count: '${input.dataDiskCount >= 4 ? 1 : 0}'
     properties:
       context: ${resource.SupervisorNamespace.id}
       manifest:
@@ -302,6 +308,7 @@ resources:
               storage: ${input.dataDiskSize4}
   VirtualMachine:
     type: CCI.Supervisor.Resource
+    count: '${input.vmCount}'
     dependsOn:
       - PersistentVolumeClaim
       - PersistentVolumeClaim2

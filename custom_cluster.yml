@@ -1,0 +1,401 @@
+layout:
+  pages:
+    - id: page_general
+      sections:
+        - id: section_d95b8d65
+          fields:
+            - id: projects
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: namespace
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+        - id: section_14ea3b62
+          fields:
+            - id: guestcluster
+              display: textField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+        - id: section_e1d6b788
+          fields:
+            - id: storageclass
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+        - id: section_a092ff5f
+          fields:
+            - id: ntpserver
+              display: textField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: ssh_enabled
+              display: checkbox
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: ssh_public_key
+              display: textField
+              state:
+                read-only: false
+                visible:
+                  - equals:
+                      ssh_enabled: true
+                    value: true
+              signpostPosition: right-middle
+        - id: section_91b804a3
+          fields:
+            - id: contents_library
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: os
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: ubuntu_version
+              display: dropDown
+              state:
+                read-only: false
+                visible:
+                  - equals:
+                      os: ubuntu
+                    value: true
+              signpostPosition: right-middle
+        - id: section_afa6ef5b
+          fields:
+            - id: trust_enabled
+              display: checkbox
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: trust_ca
+              display: textArea
+              state:
+                read-only: false
+                visible:
+                  - equals:
+                      trust_enabled: true
+                    value: true
+              signpostPosition: right-middle
+            - id: trust_base64
+              display: textField
+              state:
+                visible: false
+                read-only: false
+              signpostPosition: right-middle
+        - id: section_409d7caa
+          fields:
+            - id: kr_version
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: banner
+              display: textArea
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: fips_enabled
+              display: checkbox
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+        - id: section_cfd2176f
+          fields:
+            - id: default_disk_size
+              display: integerField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+        - id: section_263f71d1
+          fields:
+            - id: master_count
+              display: integerField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: vmclass_con
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: master_disk_size
+              display: integerField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+        - id: section_d843cd5c
+          fields:
+            - id: worker_count
+              display: integerField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: vmclass_worker
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: worker_disk_size
+              display: integerField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+      title: General
+schema:
+  projects:
+    label: Project Name
+    type:
+      dataType: string
+      isMultiple: false
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getProjectsNames
+      type: dynamic
+      parameters: []
+    constraints:
+      required: true
+  namespace:
+    label: Namespce Name
+    type:
+      dataType: string
+      isMultiple: false
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getNamespaces
+      type: dynamic
+      parameters:
+        - $type:
+            dataType: string
+            isMultiple: false
+          ProjectName: projects
+      isPageable: false
+    constraints:
+      required: true
+  ssh_public_key:
+    label: SSH Public Key
+    type:
+      dataType: string
+      isMultiple: false
+    default: ' '
+    placeholder: SSH Public Key를 등록 하세요
+    constraints:
+      required: false
+  storageclass:
+    label: vSAN Storage Class
+    type:
+      dataType: string
+      isMultiple: false
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getStorageClass
+      type: dynamic
+      parameters: []
+    placeholder: Storage Policy를 선택하세요
+    constraints:
+      required: true
+  guestcluster:
+    label: Guest Cluster Name
+    type:
+      dataType: string
+      isMultiple: false
+    placeholder: GuestCluster의 이름을 작성하세요
+    constraints:
+      required: true
+  ntpserver:
+    label: NTP Servers
+    description: '쉼표(,)로 여러 개 입력 (예: 10.253.100.2,10.253.100.3)'
+    signpost: '쉼표(,)로 여러 개 입력 (예: 10.253.100.2,10.253.100.3)'
+    type:
+      dataType: string
+      isMultiple: false
+    placeholder: NTP 서버 IP를 입력 하세요
+    constraints:
+      required: true
+  vmclass_con:
+    label: VMclass Master Size
+    type:
+      dataType: string
+      isMultiple: false
+    default: custom-best-effort-large-4c-8g
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getVMClass
+      type: dynamic
+      parameters: []
+    placeholder: CPU | Memory 사이즈를 선택 하세요
+  vmclass_worker:
+    label: VMclass Worker Size
+    type:
+      dataType: string
+      isMultiple: false
+    default: custom-best-effort-large-4c-8g
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getVMClass
+      type: dynamic
+      parameters: []
+  default_disk_size:
+    label: Default Disk Size
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 100
+  master_count:
+    label: Master Node Count
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 1
+  master_disk_size:
+    label: Master Disk Size
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 100
+  worker_count:
+    label: Worker Node Count
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 1
+  worker_disk_size:
+    label: Worker Disk Size
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 200
+  ssh_enabled:
+    label: SSH Public Enabled
+    type:
+      dataType: boolean
+      isMultiple: false
+  contents_library:
+    label: Contents Library
+    type:
+      dataType: string
+      isMultiple: false
+    default: cl-3d26d6e2a9bf8ba6e
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getContentsLibrary
+      type: dynamic
+      parameters: []
+    placeholder: Content Library를 선택 하세요
+  os:
+    label: Ubuntu || Photon || Windows
+    type:
+      dataType: string
+      isMultiple: false
+    default: ''
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getOS
+      type: dynamic
+      parameters: []
+    placeholder: OS를 선택하세요
+    constraints:
+      required: true
+  ubuntu_version:
+    label: Ubuntu Version 24.04 || 22.04
+    type:
+      dataType: string
+      isMultiple: false
+    default: ''
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getUbuntuVersion
+      type: dynamic
+      parameters:
+        - $type:
+            dataType: string
+            isMultiple: false
+          os: os
+      isPageable: false
+    placeholder: 버전을 선택하세요
+    constraints:
+      required: true
+  trust_enabled:
+    label: Trust CA Enabled
+    type:
+      dataType: boolean
+      isMultiple: false
+    default: false
+  trust_ca:
+    label: Trust CA Additional
+    type:
+      dataType: string
+      isMultiple: false
+    default: ''
+    placeholder: 신뢰 하는 인증서를 등록 하세요
+    constraints:
+      required: true
+  trust_base64:
+    label: Trust CA Base64
+    type:
+      dataType: string
+      isMultiple: false
+    default:
+      id: /data/vro-actions/com.vmk.dk/doubleBase64
+      type: dynamic
+      parameters:
+        - $type:
+            dataType: string
+            isMultiple: false
+          TrustCA: trust_ca
+      isPageable: false
+    constraints:
+      required: false
+  kr_version:
+    label: KR Version
+    type:
+      dataType: string
+      isMultiple: false
+    default: '24.04'
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getKRVersion
+      type: dynamic
+      parameters: []
+    placeholder: 설치할 Kubernets Version을 선택 하세요
+  banner:
+    label: SSH Banner
+    type:
+      dataType: string
+      isMultiple: false
+    default: >-
+      This is a test banner for FIPS mode. # Customer may opt-in setting a
+      banner other than the default Federal FIPS banner when FIPS mode is
+      enabled.
+    placeholder: SSH 접속 배너를 입력 하세요
+    constraints:
+      required: false
+  fips_enabled:
+    label: FIPS Enabled
+    type:
+      dataType: boolean
+      isMultiple: false
+    default: false
+    constraints:
+      required: false
+options:
+  externalValidations: []
