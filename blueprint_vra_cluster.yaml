@@ -69,10 +69,11 @@ inputs:
   ssh_enabled:
     type: boolean
     title: SSH Public Enabled
+    default: false
   ssh_public_key:
     type: string
     title: SSH Public Key
-    default: ' '
+    default: ''
   contents_library:
     type: string
     title: Contents Library
@@ -89,13 +90,11 @@ inputs:
   trust_enabled:
     type: boolean
     title: Trust CA Enabled
+    default: false
   trust_ca:
     type: string
     title: Trust CA Additional
-  trust_base64:
-    type: string
-    title: Trust CA Base64
-    $dynamicDefault: /data/vro-actions/com.vmk.dk/doubleBase64?TrustCA={{trust_ca}}
+    default: ''
   kr_version:
     type: string
     title: KR Version
@@ -119,8 +118,6 @@ resources:
       existing: true
   Kubernetes_Cluster_1:
     type: CCI.Supervisor.Resource
-    dependsOn:
-      - Secret_1
     metadata:
       layoutPosition:
         - 0
@@ -173,20 +170,9 @@ resources:
                   sshd:
                     banner: |
                       ${input.banner}
-                  user:
-                    passwordSecret:
-                      key: ssh-passwordkey
-                      name: ${input.guestcluster}-ssh-password-hashed
-                    sshAuthorizedKey: ${input.ssh_public_key}
-                    user: vmware-system-user
+                  user: '${from_json(input.ssh_enabled && input.ssh_public_key != null && replace(input.ssh_public_key, " ", "") != "" ? "{\"passwordSecret\":{\"key\":\"ssh-passwordkey\",\"name\":\"" + input.guestcluster + "-ssh-password-hashed\"},\"sshAuthorizedKey\":\"" + input.ssh_public_key + "\",\"user\":\"vmware-system-user\"}" : "{\"passwordSecret\":{\"key\":\"ssh-passwordkey\",\"name\":\"" + input.guestcluster + "-ssh-password-hashed\"},\"user\":\"vmware-system-user\"}")}'
                   trust:
-                    additionalTrustedCAs:
-                      - caCert:
-                          #content: |
-                          #  ${input.trust_ca}
-                          secretRef:
-                            key: additional-ca-1
-                            name: ${input.guestcluster}-custom-trusted-ca-secret
+                    additionalTrustedCAs: '${from_json(input.trust_enabled && input.trust_ca != null && input.trust_ca != "" ? "[{\"caCert\":{\"secretRef\":{\"key\":\"additional-ca-1\",\"name\":\"" + input.guestcluster + "-custom-trusted-ca-secret\"}}}]" : "[]")}'
                   ntp:
                     servers: ${split(input.ntpserver, ",")}
               - name: vmClass
@@ -216,41 +202,13 @@ resources:
                         storageClass: ${input.storageclass}
                         capacity: ${input.master_disk_size}Gi
             workers:
-              machineDeployments:
-                - class: node-pool
-                  name: worker-node-1-${substring(replace(uuid(), "-", ""), 0, 4)}
-                  replicas: ${input.worker_count}
-                  metadata:
-                    annotations:
-                      run.tanzu.vmware.com/resolve-os-image: '${"os-name=" + input.os + ", content-library=" + input.contents_library + ((input.os == "ubuntu") ? ", os-version=" + input.ubuntu_version : "")}'
-                  variables:
-                    overrides:
-                      - name: vmClass
-                        value: ${input.vmclass_worker}
-                      - name: volumes
-                        value:
-                          - name: vol-${substring(replace(uuid(), "-", ""), 0, 4)}
-                            mountPath: /var/lib/containerd
-                            storageClass: ${input.storageclass}
-                            capacity: ${input.worker_disk_size}Gi
-                - class: node-pool
-                  name: worker-node-2-${substring(replace(uuid(), "-", ""), 0, 4)}
-                  replicas: '${input.enable_second_nodepool ? input.worker_count2 : 0}'
-                  metadata:
-                    annotations:
-                      run.tanzu.vmware.com/resolve-os-image: '${"os-name=" + input.os + ", content-library=" + input.contents_library + ((input.os == "ubuntu") ? ", os-version=" + input.ubuntu_version : "")}'
-                  variables:
-                    overrides:
-                      - name: vmClass
-                        value: ${input.vmclass_worker2}
-                      - name: volumes
-                        value:
-                          - name: vol-${substring(replace(uuid(), "-", ""), 0, 4)}
-                            mountPath: /var/lib/containerd
-                            storageClass: ${input.storageclass}
-                            capacity: ${input.worker_disk_size2}Gi
+              machineDeployments: '${from_json("[" +
+                "{\"class\":\"node-pool\",\"name\":\"worker-node-1-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"replicas\":" + input.worker_count + ",\"metadata\":{\"annotations\":{\"run.tanzu.vmware.com/resolve-os-image\":\"" + ("os-name=" + input.os + ", content-library=" + input.contents_library + ((input.os == "ubuntu") ? ", os-version=" + input.ubuntu_version : "")) + "\"}},\"variables\":{\"overrides\":[{\"name\":\"vmClass\",\"value\":\"" + input.vmclass_worker + "\"},{\"name\":\"volumes\",\"value\":[{\"name\":\"vol-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"mountPath\":\"/var/lib/containerd\",\"storageClass\":\"" + input.storageclass + "\",\"capacity\":\"" + input.worker_disk_size + "Gi\"}]}]}}" +
+                (input.enable_second_nodepool ? ",{\"class\":\"node-pool\",\"name\":\"worker-node-2-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"replicas\":" + input.worker_count2 + ",\"metadata\":{\"annotations\":{\"run.tanzu.vmware.com/resolve-os-image\":\"" + ("os-name=" + input.os + ", content-library=" + input.contents_library + ((input.os == "ubuntu") ? ", os-version=" + input.ubuntu_version : "")) + "\"}},\"variables\":{\"overrides\":[{\"name\":\"vmClass\",\"value\":\"" + input.vmclass_worker2 + "\"},{\"name\":\"volumes\",\"value\":[{\"name\":\"vol-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"mountPath\":\"/var/lib/containerd\",\"storageClass\":\"" + input.storageclass + "\",\"capacity\":\"" + input.worker_disk_size2 + "Gi\"}]}]}}" : "") +
+                "]")}'
   Secret_1:
     type: CCI.Supervisor.Resource
+    count: '${input.trust_enabled && input.trust_ca != null && input.trust_ca != "" ? 1 : 0}'
     metadata:
       layoutPosition:
         - 1
@@ -265,4 +223,4 @@ resources:
           namespace: ${input.namespace}
         type: Opaque
         stringData:
-          additional-ca-1: ${input.trust_base64}
+          additional-ca-1: ${input.trust_ca}
