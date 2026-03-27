@@ -1,0 +1,268 @@
+formatVersion: 1
+inputs:
+  projects:
+    type: string
+    title: Project Name
+    $data: /data/vro-actions/com.vmk.dk/getProjectsNames
+  namespace:
+    type: string
+    title: Namespce Name
+    $data: /data/vro-actions/com.vmk.dk/getNamespaces?ProjectName={{projects}}
+  storageclass:
+    type: string
+    title: vSAN Storage Class
+    $data: /data/vro-actions/com.vmk.dk/getStorageClass
+  guestcluster:
+    type: string
+    title: Guest Cluster Name
+  ntpserver:
+    type: string
+    title: NTP Servers
+    description: '쉼표(,)로 여러 개 입력 (예: 10.253.100.2,10.253.100.3)'
+  vmclass_con:
+    type: string
+    title: VMclass Master Size
+    default: custom-best-effort-large-4c-8g
+    $data: /data/vro-actions/com.vmk.dk/getVMClass
+  vmclass_worker:
+    type: string
+    title: VMclass Worker NodePool 1 Size
+    default: custom-best-effort-large-4c-8g
+    $data: /data/vro-actions/com.vmk.dk/getVMClass
+  default_disk_size:
+    type: integer
+    title: Default Disk Size
+    default: 100
+  master_count:
+    type: integer
+    title: Master Node Count
+    default: 1
+  master_disk_size:
+    type: integer
+    title: Master Disk Size
+    default: 100
+  worker_count:
+    type: integer
+    title: Worker NodePool 1 Count
+    default: 2
+  worker_disk_size:
+    type: integer
+    title: Worker NodePool 1 Disk Size
+    default: 200
+  enable_second_nodepool:
+    type: boolean
+    title: Enable Worker NodePool 2
+    default: false
+  vmclass_worker2:
+    type: string
+    title: VMclass Worker NodePool 2 Size
+    default: custom-best-effort-large-4c-8g
+    $data: /data/vro-actions/com.vmk.dk/getVMClass
+  worker_count2:
+    type: integer
+    title: Worker NodePool 2 Count
+    default: 3
+  worker_disk_size2:
+    type: integer
+    title: Worker NodePool 2 Disk Size
+    default: 200
+  ssh_enabled:
+    type: boolean
+    title: SSH Public Enabled
+  ssh_public_key:
+    type: string
+    title: SSH Public Key
+    default: ' '
+  contents_library:
+    type: string
+    title: Contents Library
+    default: cl-3d26d6e2a9bf8ba6e
+    $data: /data/vro-actions/com.vmk.dk/getContentsLibrary
+  os:
+    type: string
+    title: Ubuntu || Photon || Windows
+    $data: /data/vro-actions/com.vmk.dk/getOS
+  ubuntu_version:
+    type: string
+    title: Ubuntu Version 24.04 || 22.04
+    $data: /data/vro-actions/com.vmk.dk/getUbuntuVersion?os={{os}}
+  trust_enabled:
+    type: boolean
+    title: Trust CA Enabled
+  trust_ca:
+    type: string
+    title: Trust CA Additional
+  trust_base64:
+    type: string
+    title: Trust CA Base64
+    $dynamicDefault: /data/vro-actions/com.vmk.dk/doubleBase64?TrustCA={{trust_ca}}
+  kr_version:
+    type: string
+    title: KR Version
+    $data: /data/vro-actions/com.vmk.dk/getKRVersion?ProjectName={{projects}}&NamespaceName={{namespace}}
+  banner:
+    type: string
+    title: SSH Banner
+    default: 'This is a test banner for FIPS mode. # Customer may opt-in setting a banner other than the default Federal FIPS banner when FIPS mode is enabled.'
+  fips_enabled:
+    type: boolean
+    title: FIPS Enabled
+resources:
+  CCI_Supervisor_Namespace_1:
+    type: CCI.Supervisor.Namespace
+    metadata:
+      layoutPosition:
+        - 0
+        - 0
+    properties:
+      name: ${input.namespace}
+      existing: true
+  Kubernetes_Cluster_1:
+    type: CCI.Supervisor.Resource
+    dependsOn:
+      - Secret_1
+    metadata:
+      layoutPosition:
+        - 0
+        - 0
+    properties:
+      context: ${resource.CCI_Supervisor_Namespace_1.id}
+      manifest:
+        apiVersion: cluster.x-k8s.io/v1beta1
+        kind: Cluster
+        metadata:
+          name: ${input.guestcluster}
+        spec:
+          clusterNetwork:
+            pods:
+              cidrBlocks:
+                - 192.168.156.0/20
+            serviceDomain: cluster.local
+            services:
+              cidrBlocks:
+                - 10.96.0.0/12
+          serviceDomain: cluster.local
+          topology:
+            class: builtin-generic-v3.5.0
+            version: ${input.kr_version}
+            variables:
+              - name: vsphereOptions
+                value:
+                  persistentVolumes:
+                    defaultStorageClass: ${input.storageclass}
+              - name: kubernetes
+                value:
+                  certificateRotation:
+                    enabled: true
+                    renewalDaysBeforeExpiry: 60
+                  security:
+                    podSecurityStandard:
+                      audit: privileged
+                      auditVersion: latest
+                      deactivated: false
+                      enforce: privileged
+                      enforceVersion: latest
+                      exemptions:
+                        namespaces: []
+                      warn: privileged
+                      warnVersion: latest
+              - name: osConfiguration
+                value:
+                  fips:
+                    enabled: ${input.fips_enabled}
+                  sshd:
+                    banner: |
+                      ${input.banner}
+                  user:
+                    passwordSecret:
+                      key: ssh-passwordkey
+                      name: ${input.guestcluster}-ssh-password-hashed
+                    sshAuthorizedKey: ${input.ssh_public_key}
+                    user: vmware-system-user
+                  trust:
+                    additionalTrustedCAs:
+                      - caCert:
+                          #content: |
+                          #  ${input.trust_ca}
+                          secretRef:
+                            key: additional-ca-1
+                            name: ${input.guestcluster}-custom-trusted-ca-secret
+                  ntp:
+                    servers: ${split(input.ntpserver, ",")}
+              - name: vmClass
+                value: ${input.vmclass_con}
+              - name: storageClass
+                value: ${input.storageclass}
+              - name: volumes
+                value:
+                  - name: vol-${substring(replace(uuid(), "-", ""), 0, 4)}
+                    mountPath: /var/lib/containerd
+                    storageClass: ${input.storageclass}
+                    capacity: ${input.default_disk_size}Gi
+            controlPlane:
+              replicas: ${input.master_count}
+              name: ${input.guestcluster}-${substring(replace(uuid(), "-", ""), 0, 4)}
+              metadata:
+                annotations:
+                  run.tanzu.vmware.com/resolve-os-image: '${"os-name=" + input.os + ", content-library=" + input.contents_library + ((input.os == "ubuntu") ? ", os-version=" + input.ubuntu_version : "")}'
+              variables:
+                overrides:
+                  - name: vmClass
+                    value: ${input.vmclass_con}
+                  - name: volumes
+                    value:
+                      - name: vol-${substring(replace(uuid(), "-", ""), 0, 4)}
+                        mountPath: /var/lib/containerd
+                        storageClass: ${input.storageclass}
+                        capacity: ${input.master_disk_size}Gi
+            workers:
+              machineDeployments:
+                - class: node-pool
+                  name: worker-node-1-${substring(replace(uuid(), "-", ""), 0, 4)}
+                  replicas: ${input.worker_count}
+                  metadata:
+                    annotations:
+                      run.tanzu.vmware.com/resolve-os-image: '${"os-name=" + input.os + ", content-library=" + input.contents_library + ((input.os == "ubuntu") ? ", os-version=" + input.ubuntu_version : "")}'
+                  variables:
+                    overrides:
+                      - name: vmClass
+                        value: ${input.vmclass_worker}
+                      - name: volumes
+                        value:
+                          - name: vol-${substring(replace(uuid(), "-", ""), 0, 4)}
+                            mountPath: /var/lib/containerd
+                            storageClass: ${input.storageclass}
+                            capacity: ${input.worker_disk_size}Gi
+                - class: node-pool
+                  name: worker-node-2-${substring(replace(uuid(), "-", ""), 0, 4)}
+                  replicas: '${input.enable_second_nodepool ? input.worker_count2 : 0}'
+                  metadata:
+                    annotations:
+                      run.tanzu.vmware.com/resolve-os-image: '${"os-name=" + input.os + ", content-library=" + input.contents_library + ((input.os == "ubuntu") ? ", os-version=" + input.ubuntu_version : "")}'
+                  variables:
+                    overrides:
+                      - name: vmClass
+                        value: ${input.vmclass_worker2}
+                      - name: volumes
+                        value:
+                          - name: vol-${substring(replace(uuid(), "-", ""), 0, 4)}
+                            mountPath: /var/lib/containerd
+                            storageClass: ${input.storageclass}
+                            capacity: ${input.worker_disk_size2}Gi
+  Secret_1:
+    type: CCI.Supervisor.Resource
+    metadata:
+      layoutPosition:
+        - 1
+        - 0
+    properties:
+      context: ${resource.CCI_Supervisor_Namespace_1.id}
+      manifest:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: ${input.guestcluster}-custom-trusted-ca-secret
+          namespace: ${input.namespace}
+        type: Opaque
+        stringData:
+          additional-ca-1: ${input.trust_base64}
