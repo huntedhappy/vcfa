@@ -416,7 +416,15 @@ schema:
     type:
       dataType: string
       isMultiple: false
-    default: ''
+    default:
+      id: /data/vro-actions/com.vmk.dk/doubleBase64
+      type: dynamic
+      parameters:
+        - $type:
+            dataType: string
+            isMultiple: false
+          TrustCA: trust_ca
+      isPageable: false
     constraints:
       required: false
   kr_version:

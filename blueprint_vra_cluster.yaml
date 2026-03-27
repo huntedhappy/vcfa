@@ -95,6 +95,10 @@ inputs:
     type: string
     title: Trust CA Additional
     default: ''
+  trust_base64:
+    type: string
+    title: Trust CA Base64
+    default: ''
   kr_version:
     type: string
     title: KR Version
@@ -223,4 +227,4 @@ resources:
           namespace: ${input.namespace}
         type: Opaque
         stringData:
-          additional-ca-1: ${input.trust_ca}
+          additional-ca-1: ${input.trust_base64}
