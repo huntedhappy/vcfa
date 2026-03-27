@@ -26,7 +26,7 @@ inputs:
     $data: /data/vro-actions/com.vmk.dk/getVMClass
   vmclass_worker:
     type: string
-    title: VMclass Worker Size
+    title: VMclass Worker NodePool 1 Size
     default: custom-best-effort-large-4c-8g
     $data: /data/vro-actions/com.vmk.dk/getVMClass
   default_disk_size:
@@ -43,11 +43,28 @@ inputs:
     default: 100
   worker_count:
     type: integer
-    title: Worker Node Count
-    default: 1
+    title: Worker NodePool 1 Count
+    default: 2
   worker_disk_size:
     type: integer
-    title: Worker Disk Size
+    title: Worker NodePool 1 Disk Size
+    default: 200
+  enable_second_nodepool:
+    type: boolean
+    title: Enable Worker NodePool 2
+    default: false
+  vmclass_worker2:
+    type: string
+    title: VMclass Worker NodePool 2 Size
+    default: custom-best-effort-large-4c-8g
+    $data: /data/vro-actions/com.vmk.dk/getVMClass
+  worker_count2:
+    type: integer
+    title: Worker NodePool 2 Count
+    default: 3
+  worker_disk_size2:
+    type: integer
+    title: Worker NodePool 2 Disk Size
     default: 200
   ssh_enabled:
     type: boolean
@@ -94,6 +111,10 @@ inputs:
 resources:
   CCI_Supervisor_Namespace_1:
     type: CCI.Supervisor.Namespace
+    metadata:
+      layoutPosition:
+        - 0
+        - 0
     properties:
       name: ${input.namespace}
       existing: true
@@ -101,6 +122,10 @@ resources:
     type: CCI.Supervisor.Resource
     dependsOn:
       - Secret_1
+    metadata:
+      layoutPosition:
+        - 0
+        - 0
     properties:
       context: ${resource.CCI_Supervisor_Namespace_1.id}
       manifest:
@@ -194,7 +219,7 @@ resources:
             workers:
               machineDeployments:
                 - class: node-pool
-                  name: worker-node-${substring(replace(uuid(), "-", ""), 0, 4)}
+                  name: worker-node-1-${substring(replace(uuid(), "-", ""), 0, 4)}
                   replicas: ${input.worker_count}
                   metadata:
                     annotations:
@@ -210,23 +235,27 @@ resources:
                             storageClass: ${input.storageclass}
                             capacity: ${input.worker_disk_size}Gi
                 - class: node-pool
-                  name: worker-node-${substring(replace(uuid(), "-", ""), 0, 4)}
-                  replicas: ${input.worker_count}
+                  name: worker-node-2-${substring(replace(uuid(), "-", ""), 0, 4)}
+                  replicas: ${input.enable_second_nodepool ? input.worker_count2 : 0}
                   metadata:
                     annotations:
                       run.tanzu.vmware.com/resolve-os-image: '${"os-name=" + input.os + ", content-library=" + input.contents_library + ((input.os == "ubuntu") ? ", os-version=" + input.ubuntu_version : "")}'
                   variables:
                     overrides:
                       - name: vmClass
-                        value: ${input.vmclass_worker}
+                        value: ${input.vmclass_worker2}
                       - name: volumes
                         value:
                           - name: vol-${substring(replace(uuid(), "-", ""), 0, 4)}
                             mountPath: /var/lib/containerd
                             storageClass: ${input.storageclass}
-                            capacity: ${input.worker_disk_size}Gi
+                            capacity: ${input.worker_disk_size2}Gi
   Secret_1:
     type: CCI.Supervisor.Resource
+    metadata:
+      layoutPosition:
+        - 1
+        - 0
     properties:
       context: ${resource.CCI_Supervisor_Namespace_1.id}
       manifest:

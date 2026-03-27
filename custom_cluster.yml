@@ -151,6 +151,12 @@ layout:
               signpostPosition: right-middle
         - id: section_d843cd5c
           fields:
+            - id: enable_second_nodepool
+              display: checkbox
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
             - id: worker_count
               display: integerField
               state:
@@ -168,6 +174,33 @@ layout:
               state:
                 visible: true
                 read-only: false
+              signpostPosition: right-middle
+            - id: worker_count2
+              display: integerField
+              state:
+                read-only: false
+                visible:
+                  - equals:
+                      enable_second_nodepool: true
+                    value: true
+              signpostPosition: right-middle
+            - id: vmclass_worker2
+              display: dropDown
+              state:
+                read-only: false
+                visible:
+                  - equals:
+                      enable_second_nodepool: true
+                    value: true
+              signpostPosition: right-middle
+            - id: worker_disk_size2
+              display: integerField
+              state:
+                read-only: false
+                visible:
+                  - equals:
+                      enable_second_nodepool: true
+                    value: true
               signpostPosition: right-middle
       title: General
 schema:
@@ -249,7 +282,17 @@ schema:
       parameters: []
     placeholder: CPU | Memory 사이즈를 선택 하세요
   vmclass_worker:
-    label: VMclass Worker Size
+    label: VMclass Worker NodePool 1 Size
+    type:
+      dataType: string
+      isMultiple: false
+    default: custom-best-effort-large-4c-8g
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getVMClass
+      type: dynamic
+      parameters: []
+  vmclass_worker2:
+    label: VMclass Worker NodePool 2 Size
     type:
       dataType: string
       isMultiple: false
@@ -277,17 +320,35 @@ schema:
       isMultiple: false
     default: 100
   worker_count:
-    label: Worker Node Count
+    label: Worker NodePool 1 Count
     type:
       dataType: integer
       isMultiple: false
-    default: 1
+    default: 2
+  worker_count2:
+    label: Worker NodePool 2 Count
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 3
   worker_disk_size:
-    label: Worker Disk Size
+    label: Worker NodePool 1 Disk Size
     type:
       dataType: integer
       isMultiple: false
     default: 200
+  worker_disk_size2:
+    label: Worker NodePool 2 Disk Size
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 200
+  enable_second_nodepool:
+    label: Enable Worker NodePool 2
+    type:
+      dataType: boolean
+      isMultiple: false
+    default: false
   ssh_enabled:
     label: SSH Public Enabled
     type:
@@ -371,11 +432,19 @@ schema:
     type:
       dataType: string
       isMultiple: false
-    default: '24.04'
+    default: ''
     valueList:
       id: /data/vro-actions/com.vmk.dk/getKRVersion
       type: dynamic
-      parameters: []
+      parameters:
+        - $type:
+            dataType: string
+            isMultiple: false
+          ProjectName: projects
+        - $type:
+            dataType: string
+            isMultiple: false
+          NamespaceName: namespace
     placeholder: 설치할 Kubernets Version을 선택 하세요
   banner:
     label: SSH Banner

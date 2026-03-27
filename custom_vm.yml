@@ -559,6 +559,12 @@ layout:
                 visible: true
                 read-only: false
               signpostPosition: right-middle
+            - id: sshTargetPort
+              display: integerField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
             - id: trustedProxyCidrs
               display: textField
               state:
@@ -695,7 +701,9 @@ schema:
       type: dynamic
       parameters: []
   vmCount:
-    label: VM Count
+    label: VM 개수
+    description: 단일 VM 고정으로 사용하려면 vmCount 입력과 blueprint의 VirtualMachine.count 라인을 함께 제거하세요.
+    signpost: 단일 VM 고정으로 사용하려면 vmCount 입력과 blueprint의 VirtualMachine.count 라인을 함께 제거하세요.
     type:
       dataType: integer
       isMultiple: false
@@ -763,6 +771,8 @@ schema:
       required: false
   dataDiskCount:
     label: Data Disk Count
+    description: 0이면 데이터 디스크를 생성하지 않습니다. 단순 템플릿으로 고정하려면 dataDisk 관련 입력/리소스를 함께 제거하세요.
+    signpost: 0이면 데이터 디스크를 생성하지 않습니다. 단순 템플릿으로 고정하려면 dataDisk 관련 입력/리소스를 함께 제거하세요.
     type:
       dataType: integer
       isMultiple: false
@@ -780,6 +790,8 @@ schema:
         label: '4'
   dataDiskLayout:
     label: Data Disk Layout
+    description: separate(개별 마운트) 또는 merged(LVM 통합)입니다. merged를 쓰지 않으면 disk-init의 merged 분기만 제거해 단순화할 수 있습니다.
+    signpost: separate(개별 마운트) 또는 merged(LVM 통합)입니다. merged를 쓰지 않으면 disk-init의 merged 분기만 제거해 단순화할 수 있습니다.
     type:
       dataType: string
       isMultiple: false
@@ -934,6 +946,8 @@ schema:
       required: false
   webServer:
     label: Web Server
+    description: 기본은 nginx입니다. apache 미사용 시 cloud-init의 Apache Domain 블록과 apache 분기만 제거하면 됩니다.
+    signpost: 기본은 nginx입니다. apache 미사용 시 cloud-init의 Apache Domain 블록과 apache 분기만 제거하면 됩니다.
     type:
       dataType: string
       isMultiple: false
@@ -970,10 +984,20 @@ schema:
         label: xfs
   servicePort:
     label: LoadBalancer Port
+    description: 외부에서 접근할 Web LoadBalancer 포트입니다.
+    signpost: 외부에서 접근할 Web LoadBalancer 포트입니다.
     type:
       dataType: integer
       isMultiple: false
     default: 80
+  sshTargetPort:
+    label: VM SSH Port (targetPort)
+    description: sshd가 실제로 listen 할 VM 내부 SSH 포트입니다.
+    signpost: sshd가 실제로 listen 할 VM 내부 SSH 포트입니다.
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 22
   trustedProxyCidrs:
     label: Trusted Proxy CIDRs for XFF
     description: Avi/LB가 전달하는 X-Forwarded-For를 신뢰할 CIDR 목록. 쉼표(,)로 구분.

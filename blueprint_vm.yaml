@@ -46,10 +46,11 @@ inputs:
     $data: /data/vro-actions/com.vmk.dk/getVMClass
   vmCount:
     type: integer
-    title: VM Count
+    title: VM 개수
     default: 2
     minimum: 1
     maximum: 10
+    description: '배포할 VM 개수입니다. 단일 VM 고정으로 사용하려면 inputs.vmCount와 VirtualMachine.count 라인을 함께 제거하세요.'
   image:
     type: string
     title: VM Image
@@ -96,6 +97,7 @@ inputs:
     type: integer
     title: Data Disk Count
     default: 0
+    description: '0이면 데이터 디스크를 생성하지 않습니다. 단순 템플릿으로 고정하려면 dataDisk 관련 입력/리소스를 함께 제거하세요.'
     oneOf:
       - title: '0'
         const: 0
@@ -111,6 +113,7 @@ inputs:
     type: string
     title: Data Disk Layout
     default: separate
+    description: 'separate(개별 마운트) 또는 merged(LVM 통합)입니다. merged를 쓰지 않으면 disk-init의 merged 분기만 제거해 단순화할 수 있습니다.'
     oneOf:
       - title: Separate (disk별 개별 마운트)
         const: separate
@@ -191,6 +194,7 @@ inputs:
     type: string
     title: Web Server
     default: nginx
+    description: '기본은 nginx입니다. apache 미사용 시 cloud-init의 Apache Domain 블록과 apache 분기만 제거하면 됩니다.'
     oneOf:
       - title: nginx
         const: nginx
@@ -219,6 +223,12 @@ inputs:
     type: integer
     title: LoadBalancer Port
     default: 80
+    description: 외부에서 접근할 Web LoadBalancer 포트입니다.
+  sshTargetPort:
+    type: integer
+    title: VM SSH Port (targetPort)
+    default: 22
+    description: sshd가 실제로 listen 할 VM 내부 SSH 포트입니다.
   trustedProxyCidrs:
     type: string
     title: Trusted Proxy CIDRs for XFF
@@ -230,6 +240,9 @@ resources:
     properties:
       name: ${input.namespace}
       existing: true
+  # [Domain: Data Disk PVC (optional)]
+  # dataDiskCount 값에 따라 아래 PVC 리소스가 선택적으로 생성됩니다.
+  # 데이터 디스크 기능 자체를 제외하려면 PersistentVolumeClaim* + VM volumes 동적식 + disk-init 실행을 함께 정리하세요.
   PersistentVolumeClaim:
     type: CCI.Supervisor.Resource
     count: '${input.dataDiskCount >= 1 ? 1 : 0}'
@@ -306,6 +319,8 @@ resources:
           resources:
             requests:
               storage: ${input.dataDiskSize4}
+  # [Domain: Compute Core]
+  # [확장 옵션] 단일 VM 고정으로 운영하려면 아래 count 라인과 inputs.vmCount 블록을 함께 제거하세요.
   VirtualMachine:
     type: CCI.Supervisor.Resource
     count: '${input.vmCount}'
@@ -386,7 +401,68 @@ resources:
                   LOG=/var/log/vcfa-user-init.log
                   exec > >(tee -a "$LOG" | tee /dev/console) 2>&1
             
+                  # ==========================================================
+                  # Domain: Identity & SSH
+                  # - 계정/권한/SSH 포트 설정만 담당
+                  # - 웹 서버 설정은 vcfa-bootstrap.sh에서 담당
+                  # ==========================================================
                   ADMIN_USER="${input.adminUser}"
+                  SSH_TARGET_PORT="${input.sshTargetPort}"
+
+                  restart_ssh_service() {
+                    local expected_port="$1"
+                    local require_port="$2"
+                    local has_ssh_service=false
+                    local has_sshd_service=false
+                    local has_ssh_socket=false
+
+                    # Ubuntu 24.x는 ssh.socket 기반일 수 있어 socket/service를 함께 처리
+                    if systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -qx 'ssh.service'; then
+                      has_ssh_service=true
+                    fi
+                    if systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -qx 'sshd.service'; then
+                      has_sshd_service=true
+                    fi
+                    if systemctl list-unit-files --type=socket --no-legend 2>/dev/null | awk '{print $1}' | grep -qx 'ssh.socket'; then
+                      has_ssh_socket=true
+                    fi
+
+                    systemctl daemon-reload 2>/dev/null || true
+
+                    # 1차 적용
+                    if [ "$has_ssh_socket" = "true" ]; then
+                      systemctl restart ssh.socket 2>/dev/null || true
+                    fi
+                    if [ "$has_ssh_service" = "true" ]; then
+                      systemctl restart ssh 2>/dev/null || systemctl start ssh 2>/dev/null || true
+                    fi
+                    if [ "$has_sshd_service" = "true" ]; then
+                      systemctl restart sshd 2>/dev/null || systemctl start sshd 2>/dev/null || true
+                    fi
+                    if [ "$has_ssh_service" = "false" ] && [ "$has_sshd_service" = "false" ]; then
+                      systemctl restart ssh 2>/dev/null || true
+                      systemctl restart sshd 2>/dev/null || true
+                    fi
+
+                    # 1차 적용 후에도 포트가 반영되지 않으면 강제 재기동
+                    if [ "$require_port" = "true" ] && ! ss -lnt 2>/dev/null | awk '{print $4}' | grep -Eq "(:|\\])${expected_port}$"; then
+                      echo "[user-init] first restart did not bind expected port=${expected_port}. forcing socket/service recycle."
+                      if [ "$has_ssh_socket" = "true" ]; then
+                        systemctl stop ssh.socket 2>/dev/null || true
+                      fi
+                      if [ "$has_ssh_service" = "true" ]; then
+                        systemctl stop ssh 2>/dev/null || true
+                        systemctl start ssh 2>/dev/null || true
+                      fi
+                      if [ "$has_sshd_service" = "true" ]; then
+                        systemctl stop sshd 2>/dev/null || true
+                        systemctl start sshd 2>/dev/null || true
+                      fi
+                      if [ "$has_ssh_socket" = "true" ]; then
+                        systemctl start ssh.socket 2>/dev/null || true
+                      fi
+                    fi
+                  }
             
                   echo "[user-init] start user=${input.adminUser}"
             
@@ -411,10 +487,61 @@ resources:
                   UsePAM yes
                   PubkeyAuthentication yes
                   EOF
-            
-                  systemctl restart ssh 2>/dev/null || true
-                  systemctl restart sshd 2>/dev/null || true
-            
+
+                  apply_ssh_port() {
+                    local port="$1"
+
+                    if [ -f /etc/ssh/sshd_config ]; then
+                      if ! grep -Eq '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' /etc/ssh/sshd_config; then
+                        printf '\nInclude /etc/ssh/sshd_config.d/*.conf\n' >> /etc/ssh/sshd_config
+                      fi
+                      sed -E -i 's/^[[:space:]]*Port[[:space:]]+[0-9]+/# &/g' /etc/ssh/sshd_config || true
+                    fi
+                    for f in /etc/ssh/sshd_config.d/*.conf; do
+                      [ -f "$f" ] || continue
+                      sed -E -i 's/^[[:space:]]*Port[[:space:]]+[0-9]+/# &/g' "$f" || true
+                    done
+
+                    cat >/etc/ssh/sshd_config.d/00-vcfa-port.conf <<EOF
+                  Port $port
+                  EOF
+                  }
+
+                  SSH_PORT_VALID=false
+                  if [[ "$SSH_TARGET_PORT" =~ ^[0-9]+$ ]] && [ "$SSH_TARGET_PORT" -ge 1 ] && [ "$SSH_TARGET_PORT" -le 65535 ]; then
+                    SSH_PORT_VALID=true
+                    apply_ssh_port "$SSH_TARGET_PORT"
+                    if command -v iptables >/dev/null 2>&1; then
+                      iptables -I INPUT 1 -p tcp --dport "$SSH_TARGET_PORT" -j ACCEPT || true
+                      iptables-save > /etc/systemd/scripts/iptables 2>/dev/null || true
+                    fi
+                  else
+                    echo "[user-init] invalid SSH_TARGET_PORT=$SSH_TARGET_PORT, keeping default 22"
+                    rm -f /etc/ssh/sshd_config.d/00-vcfa-port.conf /etc/ssh/sshd_config.d/99-vcfa-port.conf
+                  fi
+
+                  if command -v sshd >/dev/null 2>&1; then
+                    sshd -t || true
+                  elif [ -x /usr/sbin/sshd ]; then
+                    /usr/sbin/sshd -t || true
+                  fi
+
+                  restart_ssh_service "$SSH_TARGET_PORT" "$SSH_PORT_VALID"
+                  if command -v sshd >/dev/null 2>&1; then
+                    echo "[user-init] sshd effective port(s): $(sshd -T 2>/dev/null | awk '/^port /{print $2}' | xargs)"
+                  fi
+                  if [ "$SSH_PORT_VALID" = "true" ] && ss -lnt 2>/dev/null | awk '{print $4}' | grep -Eq "(:|\\])${SSH_TARGET_PORT}$"; then
+                    echo "[user-init] ssh service restart OK (port=${SSH_TARGET_PORT})"
+                  elif [ "$SSH_PORT_VALID" = "true" ]; then
+                    echo "[user-init] ssh port apply FAILED (expected=${SSH_TARGET_PORT})"
+                    systemctl status ssh --no-pager -l 2>/dev/null | tail -n 20 || true
+                    systemctl status sshd --no-pager -l 2>/dev/null | tail -n 20 || true
+                  elif systemctl is-active --quiet ssh 2>/dev/null || systemctl is-active --quiet sshd 2>/dev/null; then
+                    echo "[user-init] ssh service restart OK (active 확인, port 검증은 실패)"
+                  else
+                    echo "[user-init] ssh service status UNKNOWN (image별 서비스명 차이 가능)"
+                  fi
+             
                   echo "[user-init] done"
               - path: /usr/local/sbin/vcfa-bootstrap.sh
                 owner: root:root
@@ -425,7 +552,14 @@ resources:
             
                   LOG=/var/log/vcfa-bootstrap.log
                   exec > >(tee -a "$LOG" | tee /dev/console) 2>&1
-            
+             
+                  # ==========================================================
+                  # Domain: Web Runtime Bootstrap (Nginx / Apache)
+                  # Apache를 템플릿에서 제외하고 싶다면 아래 3가지만 정리하면 됩니다.
+                  # 1) install_base_packages_ubuntu/photon 의 apache(httpd) 설치 분기 제거
+                  # 2) Apache 함수 블록 제거
+                  # 3) 마지막 case 문에서 apache 분기 제거
+                  # ==========================================================
                   detect_os_type() {
                     if command -v apt-get >/dev/null 2>&1; then
                       echo "ubuntu"
@@ -527,9 +661,10 @@ resources:
                     export DEBIAN_FRONTEND=noninteractive
                     configure_ubuntu_repo
                     retry 5 10 apt-get update
-            
+             
                     retry 5 10 apt-get install -y curl ca-certificates jq lvm2 || true
                     retry 5 10 apt-get install -y parted util-linux xfsprogs || true
+                    retry 5 10 apt-get install -y net-tools tcpdump || true
                     retry 5 10 apt-get install -y sudo || true
             
                     if [ "$WEB_SERVER" = "nginx" ]; then
@@ -551,9 +686,10 @@ resources:
                   EOF
                     fi
                     retry 5 10 tdnf makecache -y || true
-            
+             
                     retry 5 10 tdnf install -y --nogpgcheck curl ca-certificates jq lvm2 || true
                     retry 5 10 tdnf install -y --nogpgcheck parted util-linux xfsprogs || true
+                    retry 5 10 tdnf install -y --nogpgcheck net-tools tcpdump || true
                     retry 5 10 tdnf install -y --nogpgcheck sudo || true
             
                     if [ "$WEB_SERVER" = "nginx" ]; then
@@ -563,6 +699,9 @@ resources:
                     fi
                   }
             
+                  # ==========================================================
+                  # Domain: Nginx Stack (default)
+                  # ==========================================================
                   write_nginx_html() {
                     local root_dir="$1"
                     mkdir -p "$root_dir"
@@ -705,7 +844,11 @@ resources:
                     iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT
                     iptables-save > /etc/systemd/scripts/iptables
                   }
-            
+                  # End Domain: Nginx Stack
+             
+                  # ==========================================================
+                  # Domain: Apache Stack (optional)
+                  # ==========================================================
                   write_apache_html() {
                     local root_dir="$1"
                     mkdir -p "$root_dir"
@@ -881,6 +1024,7 @@ resources:
                     iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT
                     iptables-save > /etc/systemd/scripts/iptables
                   }
+                  # End Domain: Apache Stack
             
                   verify_selected_service() {
                     if [ "$WEB_SERVER" = "nginx" ]; then
@@ -1186,6 +1330,8 @@ resources:
               - - bash
                 - '-lc'
                 - /usr/local/sbin/disk-init.sh
+  # [Domain: Web LoadBalancer]
+  # 웹 트래픽(HTTP/HTTPS 또는 커스텀 포트)을 VM으로 전달합니다.
   LoadBalancer:
     type: CCI.Supervisor.Resource
     dependsOn:
@@ -1206,6 +1352,8 @@ resources:
               protocol: TCP
               port: ${input.servicePort}
               targetPort: 80
+  # [Domain: Web Health Check Job]
+  # 배포 후 Web LB 헬스체크 검증용입니다. 사후 검증이 불필요하면 이 Job 리소스를 제거할 수 있습니다.
   ServiceHealthCheckJob:
     type: CCI.Supervisor.Resource
     dependsOn:

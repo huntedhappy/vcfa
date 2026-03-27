@@ -24,6 +24,12 @@ layout:
                 visible: true
                 read-only: false
               signpostPosition: right-middle
+            - id: vmCount
+              display: integerField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
             - id: image
               display: dropDown
               state:
@@ -533,10 +539,19 @@ layout:
                 visible: true
                 read-only: false
               signpostPosition: right-middle
+            - id: enableSshPublicKey
+              display: checkbox
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
             - id: ssh_public_key
               display: textField
               state:
-                visible: true
+                visible:
+                  - equals:
+                      enableSshPublicKey: true
+                    value: true
                 read-only: false
               signpostPosition: right-middle
         - id: 6. Application Config (앱 및 추가 구성)
@@ -548,6 +563,51 @@ layout:
                 read-only: false
               signpostPosition: right-middle
             - id: servicePort
+              display: integerField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: webTargetPort
+              display: integerField
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: enableSshLb
+              display: checkbox
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: manualVipEnabled
+              display: checkbox
+              state:
+                visible: false
+                read-only: true
+              signpostPosition: right-middle
+            - id: autoVipMode
+              display: dropDown
+              state:
+                visible: false
+                read-only: true
+              signpostPosition: right-middle
+            - id: sharedLbIp
+              display: textField
+              state:
+                visible: false
+                read-only: true
+              signpostPosition: right-middle
+            - id: sshServicePort
+              display: integerField
+              state:
+                visible:
+                  - equals:
+                      enableSshLb: true
+                    value: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: sshTargetPort
               display: integerField
               state:
                 visible: true
@@ -646,13 +706,24 @@ schema:
       isMultiple: false
     constraints:
       required: true
+  enableSshPublicKey:
+    label: Enable SSH Public Key
+    description: true면 SSH Public Key 입력 필드를 사용합니다.
+    signpost: true면 SSH Public Key 입력 필드를 사용합니다.
+    type:
+      dataType: boolean
+      isMultiple: false
+    default: false
   ssh_public_key:
     label: SSH Public Key
+    description: 선택 입력입니다. Enable SSH Public Key=true일 때만 적용됩니다.
+    signpost: 선택 입력입니다. Enable SSH Public Key=true일 때만 적용됩니다.
     type:
       dataType: string
       isMultiple: false
+    default: ''
     constraints:
-      required: true
+      required: false
   adminUser:
     label: OS Admin User
     description: 접속할 OS 사용자 계정 이름. 기존 계정이면 비밀번호만 갱신되고, 없으면 생성됩니다.
@@ -688,6 +759,14 @@ schema:
       id: /data/vro-actions/com.vmk.dk/getVMClass
       type: dynamic
       parameters: []
+  vmCount:
+    label: VM 개수
+    description: 단일 VM 고정으로 사용하려면 vmCount 입력과 blueprint의 VirtualMachine.count 라인을 함께 제거하세요.
+    signpost: 단일 VM 고정으로 사용하려면 vmCount 입력과 blueprint의 VirtualMachine.count 라인을 함께 제거하세요.
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 2
   image:
     label: VM Image
     type:
@@ -751,6 +830,8 @@ schema:
       required: false
   dataDiskCount:
     label: Data Disk Count
+    description: 0이면 데이터 디스크를 생성하지 않습니다. 단순 템플릿으로 고정하려면 dataDisk 관련 입력/리소스를 함께 제거하세요.
+    signpost: 0이면 데이터 디스크를 생성하지 않습니다. 단순 템플릿으로 고정하려면 dataDisk 관련 입력/리소스를 함께 제거하세요.
     type:
       dataType: integer
       isMultiple: false
@@ -768,6 +849,8 @@ schema:
         label: '4'
   dataDiskLayout:
     label: Data Disk Layout
+    description: separate(개별 마운트) 또는 merged(LVM 통합)입니다. merged를 쓰지 않으면 disk-init의 merged 분기만 제거해 단순화할 수 있습니다.
+    signpost: separate(개별 마운트) 또는 merged(LVM 통합)입니다. merged를 쓰지 않으면 disk-init의 merged 분기만 제거해 단순화할 수 있습니다.
     type:
       dataType: string
       isMultiple: false
@@ -922,6 +1005,8 @@ schema:
       required: false
   webServer:
     label: Web Server
+    description: 기본은 nginx입니다. apache 미사용 시 cloud-init의 Apache Domain 블록과 apache 분기만 제거하면 됩니다.
+    signpost: 기본은 nginx입니다. apache 미사용 시 cloud-init의 Apache Domain 블록과 apache 분기만 제거하면 됩니다.
     type:
       dataType: string
       isMultiple: false
@@ -958,10 +1043,71 @@ schema:
         label: xfs
   servicePort:
     label: LoadBalancer Port
+    description: 외부에서 접근할 Web LoadBalancer 포트입니다.
+    signpost: 외부에서 접근할 Web LoadBalancer 포트입니다.
     type:
       dataType: integer
       isMultiple: false
     default: 80
+  webTargetPort:
+    label: VM Web Service Port (targetPort)
+    description: VM 내부 웹 서버(nginx/apache)가 실제로 listen 할 포트입니다.
+    signpost: VM 내부 웹 서버(nginx/apache)가 실제로 listen 할 포트입니다.
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 80
+  enableSshLb:
+    label: Enable SSH on LoadBalancer
+    description: true면 Single VIP LoadBalancer에 SSH 포트를 추가합니다. false면 web 포트만 노출합니다.
+    signpost: true면 Single VIP LoadBalancer에 SSH 포트를 추가합니다. false면 web 포트만 노출합니다.
+    type:
+      dataType: boolean
+      isMultiple: false
+    default: false
+  manualVipEnabled:
+    label: Manual VIP Assignment
+    description: 현재 템플릿에서는 미사용됩니다. (Single VIP Static 모드 제거)
+    signpost: 현재 템플릿에서는 미사용됩니다. (Single VIP Static 모드 제거)
+    type:
+      dataType: boolean
+      isMultiple: false
+    default: false
+  autoVipMode:
+    label: Auto VIP Mode
+    description: 현재 템플릿은 Single VIP + Multi Port(자동)만 사용합니다.
+    signpost: 현재 템플릿은 Single VIP + Multi Port(자동)만 사용합니다.
+    type:
+      dataType: string
+      isMultiple: false
+    default: singleVipMultiPort
+    valueList:
+      - value: singleVipMultiPort
+        label: Single VIP + Multi Port (자동)
+  sharedLbIp:
+    label: Shared LoadBalancer IP (Optional)
+    description: 현재 템플릿에서는 미사용됩니다. (Single VIP Static 모드 제거)
+    signpost: 현재 템플릿에서는 미사용됩니다. (Single VIP Static 모드 제거)
+    type:
+      dataType: string
+      isMultiple: false
+    default: ''
+  sshServicePort:
+    label: LoadBalancer SSH Port
+    description: enableSshLb=true일 때 외부에 노출할 LB SSH 포트입니다.
+    signpost: enableSshLb=true일 때 외부에 노출할 LB SSH 포트입니다.
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 22
+  sshTargetPort:
+    label: VM SSH Port (targetPort)
+    description: sshd가 실제로 listen 할 VM 내부 SSH 포트입니다.
+    signpost: sshd가 실제로 listen 할 VM 내부 SSH 포트입니다.
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 22
   trustedProxyCidrs:
     label: Trusted Proxy CIDRs for XFF
     description: Avi/LB가 전달하는 X-Forwarded-For를 신뢰할 CIDR 목록. 쉼표(,)로 구분.
