@@ -62,6 +62,19 @@ inputs:
     type: string
     title: OS Disk Storage Class
     $data: /data/vro-actions/com.vmk.dk/getStroageClassManual
+  # [확장 옵션] OS Disk Resize (optional)
+  # - enableOsDiskResize=true 일 때만 osDiskSize 값으로 OS(부팅) 디스크를 확장합니다.
+  # - OS 디스크 확장 기능을 완전히 제거하려면 아래 2개 입력 + VM spec.advanced 블록 + cloud-init growpart/resize_rootfs 블록을 함께 제거하세요.
+  enableOsDiskResize:
+    type: boolean
+    title: Enable OS Disk Resize
+    default: false
+    description: true면 OS 디스크를 osDiskSize 값으로 확장합니다.
+  osDiskSize:
+    type: string
+    title: OS Disk Size
+    default: 40Gi
+    description: 'Enable OS Disk Resize=true일 때 적용되는 VM 부팅(OS) 디스크 용량입니다. 예: 40Gi'
   useCommonDataStorageclass:
     type: boolean
     title: Use Common Data Disk Storage Class (공통 사용)
@@ -377,6 +390,9 @@ resources:
           imageName: ${input.image}
           powerState: PoweredOn
           storageClass: ${input.storageclass}
+          # [확장 옵션] OS Boot Disk Resize
+          # - 확장 기능을 쓰지 않으면 아래 advanced 블록을 제거할 수 있습니다.
+          advanced: '${input.enableOsDiskResize ? from_json("{\"bootDiskCapacity\":\"" + input.osDiskSize + "\"}") : from_json("{}")}'
           volumes: '${from_json(input.dataDiskCount == 0 ? "[]" : (input.dataDiskCount == 1 ? "[{\"name\":\"data1\",\"persistentVolumeClaim\":{\"claimName\":\"pvc-data-" + input.hostname + "-" + substring(env.deploymentId, 0, 8) + "\"}}]" : (input.dataDiskCount == 2 ? "[{\"name\":\"data1\",\"persistentVolumeClaim\":{\"claimName\":\"pvc-data-" + input.hostname + "-" + substring(env.deploymentId, 0, 8) + "\"}},{\"name\":\"data2\",\"persistentVolumeClaim\":{\"claimName\":\"pvc-data2-" + input.hostname + "-" + substring(env.deploymentId, 0, 8) + "\"}}]" : (input.dataDiskCount == 3 ? "[{\"name\":\"data1\",\"persistentVolumeClaim\":{\"claimName\":\"pvc-data-" + input.hostname + "-" + substring(env.deploymentId, 0, 8) + "\"}},{\"name\":\"data2\",\"persistentVolumeClaim\":{\"claimName\":\"pvc-data2-" + input.hostname + "-" + substring(env.deploymentId, 0, 8) + "\"}},{\"name\":\"data3\",\"persistentVolumeClaim\":{\"claimName\":\"pvc-data3-" + input.hostname + "-" + substring(env.deploymentId, 0, 8) + "\"}}]" : "[{\"name\":\"data1\",\"persistentVolumeClaim\":{\"claimName\":\"pvc-data-" + input.hostname + "-" + substring(env.deploymentId, 0, 8) + "\"}},{\"name\":\"data2\",\"persistentVolumeClaim\":{\"claimName\":\"pvc-data2-" + input.hostname + "-" + substring(env.deploymentId, 0, 8) + "\"}},{\"name\":\"data3\",\"persistentVolumeClaim\":{\"claimName\":\"pvc-data3-" + input.hostname + "-" + substring(env.deploymentId, 0, 8) + "\"}},{\"name\":\"data4\",\"persistentVolumeClaim\":{\"claimName\":\"pvc-data4-" + input.hostname + "-" + substring(env.deploymentId, 0, 8) + "\"}}]"))))}'
           network:
             hostName: ${input.hostname}
@@ -413,6 +429,15 @@ resources:
             defaultUserEnabled: true
             ssh_pwauth: true
             disable_root: true
+            # [확장 옵션] OS Root FS Auto Resize
+            # - enableOsDiskResize=true면 cloud-init이 루트 파티션/파일시스템 확장을 시도합니다.
+            # - 이 기능을 제거하려면 아래 growpart/resize_rootfs 블록을 함께 삭제하세요.
+            growpart:
+              mode: ${input.enableOsDiskResize ? "auto" : "off"}
+              devices:
+                - /
+              ignore_growroot_disabled: false
+            resize_rootfs: ${input.enableOsDiskResize}
             output:
               all: '| tee -a /var/log/cloud-init-vcfa-output.log | tee /dev/console'
             users:

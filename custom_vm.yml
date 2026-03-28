@@ -73,6 +73,24 @@ layout:
                 visible: true
                 read-only: false
               signpostPosition: right-middle
+            - id: enableOsDiskResize
+              display: checkbox
+              state:
+                visible: true
+                read-only: false
+              signpostPosition: right-middle
+            - id: osDiskSize
+              display: textField
+              state:
+                visible:
+                  - equals:
+                      enableOsDiskResize: true
+                    value: true
+                  - equals:
+                      enableOsDiskResize: false
+                    value: false
+                read-only: false
+              signpostPosition: right-middle
             - id: dataDiskCount
               display: dropDown
               state:
@@ -735,6 +753,24 @@ schema:
       parameters: []
     constraints:
       required: true
+  enableOsDiskResize:
+    label: Enable OS Disk Resize
+    description: 체크 시 OS 디스크 용량을 osDiskSize 값으로 확장합니다.
+    signpost: 체크 시 OS 디스크 용량을 osDiskSize 값으로 확장합니다.
+    type:
+      dataType: boolean
+      isMultiple: false
+    default: false
+  osDiskSize:
+    label: OS Disk Size
+    description: 'Enable OS Disk Resize=true일 때 적용되는 OS 디스크 용량입니다. 예: 40Gi'
+    signpost: 'Enable OS Disk Resize=true일 때 적용되는 OS 디스크 용량입니다. 예: 40Gi'
+    type:
+      dataType: string
+      isMultiple: false
+    default: 40Gi
+    constraints:
+      required: false
   useCommonDataStorageclass:
     label: Use Common Data Disk Storage Class (공통 사용)
     type:
