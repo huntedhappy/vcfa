@@ -244,3 +244,71 @@
 - **주의사항**:
   - 새 문서/엔트리 추가 시 추측 금지. 확인되지 않은 내용은 "미확인"으로 명시.
   - 비밀(시크릿/토큰/평문 비밀번호)을 로그·문서·예시에 포함하지 말 것.
+
+---
+
+## 2026-05-24 17:00 — Tenant 모드 + Blueprint/Form/CCI/Package 자동화 (보류)
+
+### 추가/검증된 함수
+
+**`scripts/vcfa-api-lib.sh`**:
+- `login_vcfa_tenant` + dispatcher `login_vcfa` (`VCFA_TENANT_ORG` 트리거)
+- `vcfa_list_projects` / `vcfa_select_project` (tenant 전용)
+- `_vcfa_list_namespaces_cci_json` — tenant 모드용 CCI 우회 (cloudapi VDC 가 403 이라)
+- `vcfa_namespace_show_limit_cci` / `vcfa_namespace_set_limit_cci` / `vcfa_namespace_set_storage_limit_cci`
+  - CCI PATCH (`application/merge-patch+json`) 로 UI 와 동기화. CPU/Mem/Storage 모두 검증 완료.
+
+**`scripts/vcfa-content-lib.sh`**:
+- `bp_remote_list` / `bp_remote_get` / `bp_remote_import` / `bp_remote_export` / `bp_remote_delete`
+- `bp_select_export [sub-dir]` — 대화식
+- `catalog_remote_list`
+- `form_remote_import` / `form_remote_export` / `form_remote_delete`
+- `form_select_export` — 대화식 (form-id 사용자 입력 필요 — server list endpoint 없음)
+- `content_publish FILE [FORM]` — import → release → form (자동 체이닝, `VCFA_BP_ID/CATALOG_ITEM_ID/FORM_ID` env export)
+- `content_publish_all [--include-archive] [--cleanup-on-fail]` — 모든 운영 파일 일괄
+
+**`scripts/vcfa-vro-package-lib.sh`**:
+- `vco_package_sync_module PACKAGE MODULE` — 패키지에 누락된 모듈 action 자동 동기화. 기존 서명 .package 를 base 로 unsigned element 추가 → partial-signed import (vRO 가 받아들임, 검증 완료).
+- `vco_package_details` — JSON 원본 대신 표 형식 출력 (패키지/인증서/element 표/요약 카운트). `--raw` 로 원본 JSON.
+
+**`scripts/session.sh`**: env 파일 인자 지원 (`source scripts/session.sh .env.tenant`). 전환 시 선택 상태 (TOKEN, ORG, PROJECT, NS) 자동 unset.
+
+### .env / .env.tenant 핵심
+- `.env`: provider — `VCFA_USER=admin@system`
+- `.env.tenant`: tenant — `VCFA_USER=configadmin`, `VCFA_TENANT_ORG=ProviderConsumptionOrg` (분기 트리거)
+
+### 핵심 검증 사실 (2026-05-24)
+1. **Tenant 모드 = ORG 내부 API 자동화 키** — Cloud Assembly 의 blueprint/form, project-service, catalog, CCI 모두 project-scoped RBAC 으로 보호됨 → provider 토큰은 403/500, **project 멤버 tenant user 토큰은 200**.
+2. **CCI namespace 한도 = tenant 모드의 `*_cci` 함수만 UI 와 동기화**. cloudapi PUT 은 백엔드만 갱신.
+3. **vRO 액션/패키지 = 양쪽 모드 모두 작동** — 환경 전역 자산.
+4. **vRO 패키지 멤버 추가는 partial-signed 우회법으로 가능** — 이전 결론 "REST 불가" 정정.
+5. **Form 서버 list endpoint 없음** — `/forms/{uuid}` 단건 GET 만. form-id 추적은 사용자 책임 (import 직후 `VCFA_FORM_ID` env 활용).
+
+### 보류 — 환경 측 문제 (다음 세션에서 재확인)
+**`bp_remote_release` 가 HTTP 400** 으로 실패:
+```
+{"message":"VRO action com.vmk.dk/getProjectsNames not found", ...}
+```
+- vRO 자체에 `com.vmk.dk/getProjectsNames` 액션은 존재 (vco_list_actions 로 17개 모두 확인).
+- Cloud Assembly 가 release 검증 시 사용하는 vRO action lookup 경로에서 못 찾음.
+- 같은 입력으로 이전 (15:00 / 15:07 / 15:12 / 15:49) 에는 release 성공 → **환경 측 일시적 cache stale** 추정.
+- 사용자가 UI 에서 확인 부탁한 상태 (Cloud Assembly UI 의 Embedded vRO integration sync 또는 새 blueprint Test 로 dropdown 채워지는지).
+
+### 다음 세션 진입 시
+1. `source scripts/session.sh .env.tenant`
+2. `bp_remote_list` / `catalog_remote_list` 확인 — 환경 측 풀렸으면 release 재시도 가능
+3. release 가 작동하면 즉시 `content_publish_all` 로 일괄 import 검증
+4. `bp_select_export` / `form_select_export` 검증
+5. release 가 계속 400 이면 → Cloud Assembly UI 에서 vRO integration sync 또는 Test dropdown 확인 → 결과 보고 추가 진단
+
+### 현재 서버 상태
+- com.vmk.dk 모듈: 17개 액션 (정상)
+- com.dk 패키지: 2개 element (`vco_package_sync_module com.dk com.vmk.dk` 한 번 더 돌리면 17개)
+- blueprint: 0개 (DRAFT 모두 정리됨)
+- catalog item: 0개
+- namespace vcfa-kc5tn: 100 GHz / 100 GiB / 3.0 TiB (이전 검증 후 원복 상태)
+
+### 관련 메모리 / 문서
+- [reference_vcfa_cci_api.md] — CCI = tenant 모드에서 작동 (자동화 가능)
+- [README.md] — 사용법 요약
+- [docs/api-reference-guide.md] — 검증된 endpoint 모음
