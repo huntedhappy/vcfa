@@ -88,15 +88,27 @@ bp_remote_list
 bp_remote_import blueprints/vm/blueprint_vm.yaml
 bp_remote_release
 bp_remote_release <bp-id> v1.0.0 "first release"
-bp_remote_export <bp-id>
-bp_remote_export <bp-id> /tmp/my.yaml
 bp_remote_delete <bp-id>
+
+# Blueprint Export — 서버 → 로컬 파일
+bp_remote_export <bp-id>                          # 기본: blueprints/exported/blueprint_<name>.yaml
+bp_remote_export <bp-id> blueprints/vm/           # sub-dir 지정 → blueprints/vm/blueprint_<name>.yaml
+bp_remote_export <bp-id> /tmp/my.yaml             # 명시 파일 경로
+bp_select_export                                  # 대화식 — 목록 → 번호 선택 → 다운로드
+bp_select_export blueprints/vm                    # 저장 위치 지정
 
 # Catalog + Form REST
 catalog_remote_list
-form_remote_import forms/vm/custom_vm.yml
+form_remote_import forms/vm/custom_vm.yml         # → VCFA_FORM_ID 자동 export
 form_remote_import forms/vm/custom_vm.yml <catalog-item-id>
 form_remote_delete <form-id>
+
+# Form Export — 서버 → 로컬 파일
+form_remote_export <form-id>                      # 기본: forms/exported/custom_<form-id>.yml
+form_remote_export <form-id> forms/vm/            # sub-dir
+form_remote_export <form-id> forms/vm/ vm         # 파일명에 쓸 이름 → forms/vm/custom_vm.yml
+form_select_export                                # 대화식 — catalog item 목록 표시 + form-id 입력
+# ℹ️ form 서버에 list endpoint 없음 → form-id 직접 알아야 함 (form_remote_import 직후 VCFA_FORM_ID 사용 가능)
 
 # Namespace 한도 (UI 동기화)
 vcfa_list_namespaces ; vcfa_select_namespace

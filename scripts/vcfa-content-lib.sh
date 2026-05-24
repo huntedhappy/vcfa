@@ -533,21 +533,69 @@ bp_remote_delete() {
 }
 
 bp_remote_export() {
-  # Usage: bp_remote_export <blueprint-id> [out-file]
-  # 기본 출력 경로: blueprints/exported/<name>.yaml
-  local id="${1:?Usage: bp_remote_export <blueprint-id> [out-file]}"
+  # Usage: bp_remote_export <blueprint-id> [out-file|sub-dir]
+  #   <blueprint-id>      : 필수
+  #   2번째 인자 종류:
+  #     - / 로 끝나거나 디렉터리면 → sub-dir 로 간주 → 파일명은 blueprint_<name>.yaml 자동 생성
+  #     - 그 외 → 지정 파일 경로로 저장
+  #     - 생략 → blueprints/exported/blueprint_<name>.yaml
+  local id="${1:?Usage: bp_remote_export <blueprint-id> [out-file|sub-dir]}"
+  local hint="${2:-}"
   _remote_guard || return 1
   local resp; resp=$(mktemp /tmp/bp-exp.XXXXXX)
   vcfa_api_get "https://${VCFA_FQDN}/blueprint/api/blueprints/${id}" > "${resp}" \
     || { rm -f "${resp}"; return 1; }
 
   local name; name=$(jq -r '.name' "${resp}")
-  local out="${2:-blueprints/exported/${name}.yaml}"
+  local out
+  if [[ -z "$hint" ]]; then
+    out="blueprints/exported/blueprint_${name}.yaml"
+  elif [[ "$hint" == */ ]] || [[ -d "$hint" ]] || [[ "$hint" =~ ^(blueprints|forms)/[^/]+$ ]]; then
+    # sub-dir 로 취급
+    local dir="${hint%/}"
+    [[ "$dir" = /* ]] || dir="${dir}"   # 상대경로 그대로
+    out="${dir}/blueprint_${name}.yaml"
+  else
+    out="$hint"
+  fi
   mkdir -p "$(dirname "$out")"
   jq -r '.content' "${resp}" > "$out"
   echo "OK: exported — id=${id}  name=${name}  → ${out}"
   ls -la "$out"
   rm -f "${resp}"
+}
+
+# 대화식 — 서버 blueprint 목록 → 번호 선택 → 다운로드.
+# Usage: bp_select_export [sub-dir]
+#   sub-dir 미지정 시 기본 blueprints/exported/
+bp_select_export() {
+  _remote_guard || return 1
+  local sub="${1:-blueprints/exported}"
+
+  local resp; resp=$(mktemp /tmp/bp-sel.XXXXXX)
+  vcfa_api_get "https://${VCFA_FQDN}/blueprint/api/blueprints?page=0&size=200" > "${resp}" \
+    || { rm -f "${resp}"; return 1; }
+
+  local n; n=$(jq '.content | length' "${resp}")
+  if [[ "$n" -eq 0 ]]; then
+    echo "(서버에 blueprint 가 없음)"; rm -f "${resp}"; return 1
+  fi
+
+  echo "선택 가능한 Blueprint (${n}개):"
+  jq -r '.content | to_entries[] | "  \(.key+1 | tostring | (" "*(2-length) + .))) \(.value.name)   [\(.value.status)]   id=\(.value.id)"' "${resp}"
+  echo ""
+  echo "저장 위치: ${sub}/blueprint_<name>.yaml"
+  printf "번호 [1-%s] (q=취소): " "$n"
+  local choice; read -r choice
+  if [[ "$choice" == "q" ]]; then echo "취소"; rm -f "${resp}"; return 1; fi
+  if ! [[ "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > n )); then
+    echo "ERROR: invalid choice." >&2; rm -f "${resp}"; return 1
+  fi
+  local idx=$((choice-1))
+  local id; id=$(jq -r ".content[$idx].id" "${resp}")
+  rm -f "${resp}"
+
+  bp_remote_export "$id" "${sub}/"
 }
 
 # ---- Catalog ----
@@ -613,6 +661,92 @@ form_remote_import() {
   echo "    file     = ${f}"
   echo "    source   = ${src}  (catalog item)"
   echo "    form-id  = ${form_id}    (셸에 VCFA_FORM_ID export)"
+}
+
+form_remote_export() {
+  # Usage: form_remote_export <form-id> [out-file|sub-dir] [catalog-item-name]
+  # form 본문(.form 필드)을 파일로 저장. formFormat 에 따라 .yml / .json.
+  #   <form-id>          : 필수 — POST /forms 응답 Location 헤더의 마지막 segment
+  #   2번째 인자 종류:
+  #     - 디렉터리면 → 파일명은 custom_<catalog-name|form-id>.yml 자동
+  #     - 그 외 → 지정 파일 경로
+  #     - 생략 → forms/exported/custom_<catalog-name|form-id>.yml
+  #   3번째 인자: 파일명에 쓸 사람-친화 이름 (생략 시 form-id)
+  local id="${1:?Usage: form_remote_export <form-id> [out-file|sub-dir] [catalog-item-name]}"
+  local hint="${2:-}"
+  local pretty="${3:-${id}}"
+  _remote_guard || return 1
+
+  local resp; resp=$(mktemp /tmp/form-exp.XXXXXX)
+  local code
+  code=$(curl -sk -H "Authorization: Bearer ${TOKEN}" -H "Accept: application/json" \
+    "https://${VCFA_FQDN}/form-service/api/forms/${id}" \
+    -o "${resp}" -w "%{http_code}")
+  if [[ "$code" != "200" ]]; then
+    echo "ERROR: form GET HTTP=${code}" >&2
+    jq . "${resp}" 2>/dev/null >&2 || cat "${resp}" >&2
+    rm -f "${resp}"; return 1
+  fi
+
+  # 응답에 form 본문 + formFormat 들어있음
+  local fmt; fmt=$(jq -r '.formFormat // "YAML"' "${resp}")
+  local ext="yml"
+  [[ "$fmt" == "JSON" ]] && ext="json"
+
+  local out
+  if [[ -z "$hint" ]]; then
+    out="forms/exported/custom_${pretty}.${ext}"
+  elif [[ "$hint" == */ ]] || [[ -d "$hint" ]] || [[ "$hint" =~ ^forms/[^/]+$ ]]; then
+    local dir="${hint%/}"
+    out="${dir}/custom_${pretty}.${ext}"
+  else
+    out="$hint"
+  fi
+
+  mkdir -p "$(dirname "$out")"
+  jq -r '.form // ""' "${resp}" > "$out"
+  echo "OK: exported — form-id=${id}  format=${fmt}  → ${out}"
+  ls -la "$out"
+  rm -f "${resp}"
+}
+
+# 대화식 — 카탈로그 item 선택 → 사용자가 form-id 입력 → 다운로드.
+# Form 서버 list endpoint 가 없어 자동 매핑 불가. form_remote_import 직후 받은
+# form-id 를 메모해두거나, VCFA_FORM_ID 가 셸에 살아있을 때 사용.
+# Usage: form_select_export [sub-dir]
+form_select_export() {
+  _remote_guard || return 1
+  local sub="${1:-forms/exported}"
+
+  # 카탈로그 item 보여줌 — 사용자에게 어떤 form 이 어느 item 과 연결됐는지 힌트
+  local resp; resp=$(mktemp /tmp/cat-sel.XXXXXX)
+  vcfa_api_get "https://${VCFA_FQDN}/catalog/api/items?page=0&size=200" > "${resp}" \
+    || { rm -f "${resp}"; return 1; }
+  local n; n=$(jq '.content | length' "${resp}")
+
+  echo "참고 — 현재 카탈로그 item (form 적용 대상이 될 수 있는 후보):"
+  if [[ "$n" -eq 0 ]]; then
+    echo "  (없음)"
+  else
+    jq -r '.content[] | "  \(.name)  item-id=\(.id)"' "${resp}"
+  fi
+  rm -f "${resp}"
+
+  echo ""
+  echo "ℹ️  Form 서버 list endpoint 가 없어 form-id 로 직접 export 합니다."
+  echo "   form-id 는 form_remote_import 시 응답 Location 헤더의 마지막 segment."
+  echo "   (셸에 VCFA_FORM_ID 가 살아있으면 기본값으로 사용)"
+  echo ""
+  printf "form-id [%s] (q=취소): " "${VCFA_FORM_ID:-입력 필요}"
+  local fid; read -r fid
+  fid="${fid:-${VCFA_FORM_ID:-}}"
+  if [[ "$fid" == "q" || -z "$fid" ]]; then echo "취소"; return 1; fi
+
+  printf "파일명에 쓸 이름 [%s]: " "form-${fid:0:8}"
+  local pretty; read -r pretty
+  pretty="${pretty:-form-${fid:0:8}}"
+
+  form_remote_export "$fid" "${sub}/" "$pretty"
 }
 
 form_remote_delete() {
