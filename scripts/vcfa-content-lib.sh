@@ -1,0 +1,773 @@
+# ============================================================
+# Cloud Assembly content (blueprint / form / package) — 로컬 + REST 헬퍼
+#
+# 로컬 (offline, 모든 모드에서 작동):
+#   bp_list / bp_check [FILE] / bp_show FILE          - blueprint YAML 검증/요약
+#   form_list / form_check [FILE] / form_show FILE    - form YAML 검증/요약
+#   pkg_list / pkg_check [FILE] / pkg_show FILE       - .package ZIP 검증/요약
+#   content_pairs                                      - blueprint ↔ form 매칭표 추측
+#
+# REST (tenant 모드 전용 — source scripts/session.sh .env.tenant 후 사용):
+#   bp_remote_list                                     - 서버 blueprint 목록
+#   bp_remote_get <id>                                 - 단건 조회
+#   bp_remote_import <yaml> [name]                     - DRAFT 생성
+#   bp_remote_release <id> [version] [desc]            - 새 version + catalog 노출
+#   bp_remote_export <id> [out-file]                   - 서버 → 로컬 YAML
+#   bp_remote_delete <id>                              - 삭제 (catalog item 도 자동 정리)
+#   catalog_remote_list                                - 카탈로그 item 목록 (form 의 sourceId)
+#   form_remote_import <form-yml> <catalog-item-id>    - form 적용
+#   form_remote_delete <form-id>                       - 삭제
+#
+# REST 자동화 전제: VCFA_TENANT_ORG 가 설정된 .env.tenant 로 source, 그리고
+# 그 user 가 target project 의 멤버여야 함 (provider 토큰은 403/500).
+# 검증 완료 2026-05-24: configadmin@ProviderConsumptionOrg + default-project.
+# ============================================================
+
+# 루트 디렉터리 (이 lib 위치 기준 한 단계 위)
+_content_root() {
+  # lib 파일 위치 — session.sh 가 source 시 _VCFA_LIB_DIR 설정. 없으면 fallback
+  local d="${_VCFA_LIB_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)}"
+  (cd "${d}/.." && pwd)
+}
+
+# 내부: 단일 파일 YAML 문법 검증 (yq 사용). stdout 무음, return 0/1
+_yaml_lint() {
+  local f="$1"
+  yq eval '.' "$f" >/dev/null 2>&1
+}
+
+# 내부: 친근한 size 표시
+_human_size() {
+  local b="$1"
+  if   (( b >= 1048576 )); then printf '%.1fM' "$(echo "scale=1; $b/1048576" | bc)"
+  elif (( b >= 1024 )); then    printf '%.1fK' "$(echo "scale=1; $b/1024" | bc)"
+  else                          printf '%dB' "$b"
+  fi
+}
+
+bp_list() {
+  require_cmd yq || return 1
+  local root; root=$(_content_root)
+  local dir="${root}/blueprints"
+  if [[ ! -d "$dir" ]]; then
+    echo "ERROR: ${dir} 디렉터리가 없습니다." >&2
+    return 1
+  fi
+
+  {
+    printf 'FILE\tFORMAT\tINPUTS\tRESOURCES\tSIZE\n'
+    local f rel fmt ins res sz
+    while IFS= read -r f; do
+      rel="${f#${root}/}"
+      fmt=$(yq eval '.formatVersion // "?"' "$f" 2>/dev/null)
+      ins=$(yq eval '.inputs | length // 0' "$f" 2>/dev/null)
+      res=$(yq eval '.resources | length // 0' "$f" 2>/dev/null)
+      sz=$(_human_size "$(wc -c < "$f")")
+      printf '%s\t%s\t%s\t%s\t%s\n' "${rel}" "${fmt}" "${ins}" "${res}" "${sz}"
+    done < <(find "$dir" -type f \( -name "*.yaml" -o -name "*.yml" \) | sort)
+  } | column -t -s $'\t'
+}
+
+bp_check() {
+  require_cmd yq || return 1
+  local root; root=$(_content_root)
+  local dir="${root}/blueprints"
+  local f rc=0 status
+
+  local files=()
+  if [[ -n "$1" ]]; then
+    files=("$1")
+  else
+    while IFS= read -r f; do files+=("$f"); done < <(find "$dir" -type f \( -name "*.yaml" -o -name "*.yml" \) | sort)
+  fi
+
+  for f in "${files[@]}"; do
+    local issues=()
+
+    # 1) YAML 문법
+    if ! _yaml_lint "$f"; then
+      issues+=("YAML syntax error")
+    else
+      # 2) 필수 키 — Cloud Assembly Cloud Template 의 최소 형식
+      local fmt; fmt=$(yq eval '.formatVersion' "$f" 2>/dev/null)
+      [[ "$fmt" == "1" ]] || issues+=("formatVersion != 1 (got: ${fmt:-null})")
+      local has_inputs has_resources
+      has_inputs=$(yq eval 'has("inputs")' "$f" 2>/dev/null)
+      has_resources=$(yq eval 'has("resources")' "$f" 2>/dev/null)
+      [[ "$has_resources" == "true" ]] || issues+=("missing .resources")
+      # inputs 는 선택적 — 경고만 (별도 표시 X)
+    fi
+
+    if [[ ${#issues[@]} -eq 0 ]]; then
+      status="OK"
+    else
+      status="FAIL: $(IFS='; '; echo "${issues[*]}")"
+      rc=1
+    fi
+    printf '%s\t%s\n' "${f#${root}/}" "$status"
+  done | column -t -s $'\t'
+  return $rc
+}
+
+bp_show() {
+  local f="${1:?Usage: bp_show <blueprint-file>}"
+  [[ -f "$f" ]] || { echo "ERROR: file not found: $f" >&2; return 1; }
+  require_cmd yq || return 1
+  echo "=== ${f} ==="
+  yq eval '{
+    "formatVersion": .formatVersion,
+    "inputs": (.inputs // {} | to_entries | map({key, type: .value.type, default: .value.default, "from-vRO": (.value["$data"] // null) })),
+    "resources": (.resources // {} | to_entries | map({key, type: .value.type}))
+  }' "$f"
+}
+
+form_list() {
+  require_cmd yq || return 1
+  local root; root=$(_content_root)
+  local dir="${root}/forms"
+  if [[ ! -d "$dir" ]]; then
+    echo "ERROR: ${dir} 디렉터리가 없습니다." >&2
+    return 1
+  fi
+
+  {
+    printf 'FILE\tPAGES\tFIELDS\tSIZE\n'
+    local f rel pages fields sz
+    while IFS= read -r f; do
+      rel="${f#${root}/}"
+      pages=$(yq eval '.layout.pages | length // 0' "$f" 2>/dev/null)
+      fields=$(yq eval '[.layout.pages[]?.sections[]?.fields[]?] | length // 0' "$f" 2>/dev/null)
+      sz=$(_human_size "$(wc -c < "$f")")
+      printf '%s\t%s\t%s\t%s\n' "${rel}" "${pages}" "${fields}" "${sz}"
+    done < <(find "$dir" -type f \( -name "*.yaml" -o -name "*.yml" \) | sort)
+  } | column -t -s $'\t'
+}
+
+form_check() {
+  require_cmd yq || return 1
+  local root; root=$(_content_root)
+  local dir="${root}/forms"
+  local f rc=0 status
+
+  local files=()
+  if [[ -n "$1" ]]; then
+    files=("$1")
+  else
+    while IFS= read -r f; do files+=("$f"); done < <(find "$dir" -type f \( -name "*.yaml" -o -name "*.yml" \) | sort)
+  fi
+
+  for f in "${files[@]}"; do
+    local issues=()
+
+    if ! _yaml_lint "$f"; then
+      issues+=("YAML syntax error")
+    else
+      # Service Broker Custom Form: 최소 .layout.pages[] 존재
+      local has_layout pages_count
+      has_layout=$(yq eval 'has("layout")' "$f" 2>/dev/null)
+      [[ "$has_layout" == "true" ]] || issues+=("missing .layout")
+      pages_count=$(yq eval '.layout.pages | length // 0' "$f" 2>/dev/null)
+      (( pages_count > 0 )) || issues+=(".layout.pages 비어있음")
+    fi
+
+    if [[ ${#issues[@]} -eq 0 ]]; then
+      status="OK"
+    else
+      status="FAIL: $(IFS='; '; echo "${issues[*]}")"
+      rc=1
+    fi
+    printf '%s\t%s\n' "${f#${root}/}" "$status"
+  done | column -t -s $'\t'
+  return $rc
+}
+
+form_show() {
+  local f="${1:?Usage: form_show <form-file>}"
+  [[ -f "$f" ]] || { echo "ERROR: file not found: $f" >&2; return 1; }
+  require_cmd yq || return 1
+  echo "=== ${f} ==="
+  yq eval '{
+    "pages": [.layout.pages[]? | {
+      id,
+      "sections": [.sections[]? | {
+        id,
+        "fields": [.fields[]? | {id, display}]
+      }]
+    }]
+  }' "$f"
+}
+
+pkg_list() {
+  require_cmd unzip || return 1
+  local root; root=$(_content_root)
+  local dir="${root}/packages"
+  if [[ ! -d "$dir" ]]; then
+    echo "ERROR: ${dir} 디렉터리가 없습니다." >&2
+    return 1
+  fi
+
+  {
+    printf 'FILE\tELEMENTS\tSIGNED\tSIZE\n'
+    local f rel elements signed sz
+    while IFS= read -r f; do
+      rel="${f#${root}/}"
+      elements=$(unzip -l "$f" 2>/dev/null | awk '$NF ~ /^elements\// && $NF ~ /\/data$/ {n++} END{print n+0}')
+      if unzip -l "$f" 2>/dev/null | grep -q "^.*signatures/dunes-meta-inf$"; then signed=yes; else signed=no; fi
+      sz=$(_human_size "$(wc -c < "$f")")
+      printf '%s\t%s\t%s\t%s\n' "${rel}" "${elements}" "${signed}" "${sz}"
+    done < <(find "$dir" -maxdepth 2 -type f -name "*.package" | sort)
+  } | column -t -s $'\t'
+}
+
+pkg_check() {
+  require_cmd unzip || return 1
+  local root; root=$(_content_root)
+  local dir="${root}/packages"
+  local f rc=0 status
+
+  local files=()
+  if [[ -n "$1" ]]; then
+    files=("$1")
+  else
+    while IFS= read -r f; do files+=("$f"); done < <(find "$dir" -maxdepth 2 -type f -name "*.package" | sort)
+  fi
+
+  for f in "${files[@]}"; do
+    local issues=()
+    local listing
+    if ! listing=$(unzip -l "$f" 2>&1); then
+      issues+=("not a valid ZIP")
+    else
+      # dunes-meta-inf 존재
+      echo "$listing" | grep -q "dunes-meta-inf$" || issues+=("missing dunes-meta-inf")
+      # 최소 element 1개
+      local n
+      n=$(echo "$listing" | awk '$NF ~ /^elements\// && $NF ~ /\/data$/ {n++} END{print n+0}')
+      (( n > 0 )) || issues+=("no elements")
+      # 서명 디렉터리
+      echo "$listing" | grep -q "^.*signatures/" || issues+=("no signatures/ dir (unsigned)")
+      # 인증서
+      echo "$listing" | grep -q "^.*certificates/" || issues+=("no certificates/ dir")
+    fi
+
+    if [[ ${#issues[@]} -eq 0 ]]; then
+      status="OK"
+    else
+      status="FAIL: $(IFS='; '; echo "${issues[*]}")"
+      rc=1
+    fi
+    printf '%s\t%s\n' "${f#${root}/}" "$status"
+  done | column -t -s $'\t'
+  return $rc
+}
+
+pkg_show() {
+  # Usage: pkg_show <package-file>
+  # 메타(이름/서명자/버전) + element 목록 (name, type, module, result-type, inputs)
+  local f="${1:?Usage: pkg_show <package-file>}"
+  [[ -f "$f" ]] || { echo "ERROR: file not found: $f" >&2; return 1; }
+  require_cmd unzip || return 1
+  require_cmd iconv || return 1
+
+  echo "=== ${f} ==="
+  echo ""
+  echo "[메타데이터 — dunes-meta-inf]"
+  unzip -p "$f" dunes-meta-inf 2>/dev/null \
+    | grep -oE '<entry key="[^"]+">[^<]+</entry>' \
+    | sed -E 's|<entry key="([^"]+)">([^<]+)</entry>|  \1 = \2|'
+
+  echo ""
+  echo "[Element 목록]"
+  # 각 element 의 data/info/categories 를 tmpfile 로 추출해서 처리.
+  # ※ local var=$(unzip|iconv ...) 식 명령 치환은 zsh 에서 UTF-16/BOM 같은 특수바이트가
+  #   섞이면 변수 선언 자체를 'typeset -p' 형식으로 stdout 에 흘리는 버그가 있어 회피.
+  local data_f info_f cat_f
+  data_f=$(mktemp /tmp/pkg-data.XXXXXX)
+  info_f=$(mktemp /tmp/pkg-info.XXXXXX)
+  cat_f=$(mktemp /tmp/pkg-cat.XXXXXX)
+
+  {
+    printf 'NAME\tTYPE\tMODULE\tRESULT-TYPE\tINPUTS\n'
+    local eid name elem_type module result_type inputs
+    while IFS= read -r eid; do
+      unzip -p "$f" "elements/${eid}/info" 2>/dev/null > "$info_f"
+      unzip -p "$f" "elements/${eid}/categories" 2>/dev/null | iconv -f UTF-16 -t UTF-8 2>/dev/null > "$cat_f"
+      unzip -p "$f" "elements/${eid}/data"       2>/dev/null | iconv -f UTF-16 -t UTF-8 2>/dev/null > "$data_f"
+
+      elem_type=$(grep -oE '<entry key="type">[^<]+</entry>' "$info_f" \
+        | sed -E 's|.*>([^<]+)<.*|\1|')
+      module=$(grep -oE "<category name='[^']+'" "$cat_f" \
+        | head -1 | sed "s/<category name='\\([^']*\\)'/\\1/")
+      name=$(grep -oE 'dunes-script-module name="[^"]+"' "$data_f" \
+        | head -1 | sed 's/.*name="\([^"]*\)".*/\1/')
+      result_type=$(grep -oE 'result-type="[^"]+"' "$data_f" \
+        | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+      inputs=$(grep -cE '<param n="[^"]+"' "$data_f")
+
+      printf '%s\t%s\t%s\t%s\t%s\n' "${name:-?}" "${elem_type:-?}" "${module:-?}" "${result_type:-?}" "${inputs:-0}"
+    done < <(unzip -l "$f" 2>/dev/null | awk '$NF ~ /^elements\/[^\/]+\/data$/ {print $NF}' | sed -E 's|elements/([^/]+)/data|\1|' | sort -u)
+  } | column -t -s $'\t'
+
+  rm -f "$data_f" "$info_f" "$cat_f"
+}
+
+content_pairs() {
+  # blueprint ↔ form 매칭 추측 — 파일 이름의 공통 어휘 기반.
+  # blueprint_vm.yaml ↔ custom_vm.yml, blueprint_vra_cluster.yaml ↔ custom_cluster.yml 등.
+  # 정확한 매칭표는 운영자가 별도 관리 (각 README 의 매칭표 참조).
+  local root; root=$(_content_root)
+  echo "(파일명에서 'blueprint_' / 'custom_' / 'vra_' / 'vcfa_' 접두/접미 제거 후 비교)"
+  echo ""
+  printf '%s\n' "BLUEPRINT	FORM	MATCHED_KEY"
+
+  local bp_dir="${root}/blueprints" form_dir="${root}/forms"
+  local f rel key form_rel matched
+  while IFS= read -r f; do
+    rel="${f#${root}/}"
+    # archive/ 는 표시만 하고 매칭 시도 안함
+    if [[ "$rel" == */archive/* ]]; then
+      printf '%s\t%s\t%s\n' "$rel" "-" "(archive)"
+      continue
+    fi
+    # 키 추출 — 접두사들을 반복적으로 제거 (blueprint_vra_cluster → vra_cluster → cluster)
+    key=$(basename "$f" | sed -E 's/\.(yaml|yml)$//; :a; s/^(blueprint_|custom_|vra_|vcfa_)//; ta')
+    # forms/ 안에 동일 키 매칭
+    matched=""
+    while IFS= read -r form_rel; do
+      local fkey
+      fkey=$(basename "$form_rel" | sed -E 's/\.(yaml|yml)$//; :a; s/^(blueprint_|custom_|vra_|vcfa_)//; ta')
+      if [[ "$fkey" == "$key" ]]; then
+        matched="${form_rel#${root}/}"
+        break
+      fi
+    done < <(find "$form_dir" -type f \( -name "*.yaml" -o -name "*.yml" \) ! -path "*/archive/*" | sort)
+    printf '%s\t%s\t%s\n' "$rel" "${matched:-(no match)}" "$key"
+  done < <(find "$bp_dir" -type f \( -name "*.yaml" -o -name "*.yml" \) | sort) | column -t -s $'\t'
+}
+
+# ============================================================
+# Blueprint / Form REST 자동화 (tenant 모드 전용)
+#
+# 전제: source scripts/session.sh .env.tenant 후 사용. 즉
+#       - TOKEN, VCFA_FQDN, VCFA_PROJECT_ID 가 설정되어 있어야 함
+#       - configadmin 같이 project 멤버인 user 의 token 이어야 200
+#
+# 검증된 흐름 (2026-05-24):
+#   1) bp_remote_import <yaml> [name]   → blueprint 생성 (DRAFT)
+#   2) bp_remote_release <id>            → 새 version + release → catalog item 자동 생성
+#   3) form_remote_import <yml> <catalog-item-id>  → 그 item 에 form 적용
+# 삭제는 form 먼저, blueprint 가 나중 (역순). blueprint 삭제 시 catalog item 도 자동 정리.
+# ============================================================
+
+_remote_guard() {
+  : "${VCFA_FQDN:?ERROR: VCFA_FQDN is not set}"
+  : "${TOKEN:?ERROR: TOKEN 이 없음 — source scripts/session.sh .env.tenant 먼저}"
+  if [[ -z "${VCFA_TENANT_ORG:-}" ]]; then
+    echo "WARN: tenant 모드가 아닌 듯 (VCFA_TENANT_ORG 미설정). REST 호출은 403/500 가능성." >&2
+  fi
+  require_cmd jq || return 1
+  return 0
+}
+
+_project_id() {
+  if [[ -n "${VCFA_PROJECT_ID:-}" ]]; then
+    echo "${VCFA_PROJECT_ID}"
+    return 0
+  fi
+  echo "ERROR: VCFA_PROJECT_ID 가 없음 — vcfa_select_project 로 먼저 선택" >&2
+  return 1
+}
+
+# ---- Blueprint ----
+
+bp_remote_list() {
+  _remote_guard || return 1
+  local resp; resp=$(mktemp /tmp/bp-list.XXXXXX)
+  vcfa_api_get "https://${VCFA_FQDN}/blueprint/api/blueprints?page=0&size=200" > "${resp}" \
+    || { rm -f "${resp}"; return 1; }
+  {
+    printf 'NAME\tID\tPROJECT\tSTATUS\tVALID\tUPDATED\n'
+    jq -r '.content[]? | [.name, .id, .projectName, (.status // "?"), (.valid // "?" | tostring), (.updatedAt // .createdAt // "")] | @tsv' "${resp}"
+  } | column -t -s $'\t'
+  rm -f "${resp}"
+}
+
+bp_remote_get() {
+  local id="${1:?Usage: bp_remote_get <blueprint-id>}"
+  _remote_guard || return 1
+  vcfa_api_get "https://${VCFA_FQDN}/blueprint/api/blueprints/${id}" \
+    | jq '{id, name, projectId, projectName, status, valid, errors, createdAt, updatedAt, "content_preview": (.content // "" | .[0:200])}'
+}
+
+bp_remote_import() {
+  # Usage: bp_remote_import <yaml-file> [name]
+  # name 기본: <yaml-basename> (확장자 제외)
+  local f="${1:?Usage: bp_remote_import <yaml-file> [name]}"
+  [[ -f "$f" ]] || { echo "ERROR: file not found: $f" >&2; return 1; }
+  _remote_guard || return 1
+  local pid; pid=$(_project_id) || return 1
+
+  local name="${2:-$(basename "$f" | sed -E 's/\.(yaml|yml)$//; s/^blueprint_//')}"
+
+  # YAML → JSON-safe 문자열
+  local content_str; content_str=$(jq -Rs '.' < "$f")
+  local body; body=$(mktemp /tmp/bp-import.XXXXXX)
+  jq -n --arg name "$name" --arg pid "$pid" --argjson content "$content_str" \
+    '{name:$name, projectId:$pid, content:$content}' > "$body"
+
+  local resp; resp=$(mktemp /tmp/bp-import-resp.XXXXXX)
+  local code
+  code=$(curl -sk -X POST \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -d @"${body}" \
+    -o "${resp}" -w "%{http_code}" \
+    "https://${VCFA_FQDN}/blueprint/api/blueprints")
+  rm -f "${body}"
+
+  if [[ "${code}" != "201" ]]; then
+    echo "ERROR: blueprint import HTTP=${code}" >&2
+    jq . "${resp}" 2>/dev/null >&2 || cat "${resp}" >&2
+    rm -f "${resp}"; return 1
+  fi
+
+  local id; id=$(jq -r '.id' "${resp}")
+  local valid; valid=$(jq -r '.valid' "${resp}")
+  rm -f "${resp}"
+
+  # 다음 단계가 사용할 수 있도록 셸 환경에 export — 손으로 id 복사 안 해도 됨.
+  export VCFA_BP_ID="$id"
+  export VCFA_BP_NAME="$name"
+  echo "OK: blueprint imported"
+  echo "    name = ${name}"
+  echo "    id   = ${id}    (셸에 VCFA_BP_ID 로 export 됨)"
+  echo "    valid=${valid}, status=DRAFT"
+  echo "    다음 단계: bp_remote_release                 (인자 생략 = 방금 import 한 것)"
+}
+
+bp_remote_release() {
+  # Usage: bp_remote_release [blueprint-id] [version] [description]
+  # blueprint-id 생략 시 VCFA_BP_ID (이전에 import 한 것) 사용.
+  # version 기본: v<YYYYMMDD>.<HHMMSS>
+  local id="${1:-${VCFA_BP_ID:-}}"
+  if [[ -z "$id" ]]; then
+    echo "ERROR: blueprint-id 필요. 인자로 주거나, bp_remote_import 직후 호출 (VCFA_BP_ID 가 자동 세팅됨)" >&2
+    return 1
+  fi
+  local version="${2:-v$(date +%Y%m%d.%H%M%S)}"
+  local desc="${3:-automated release}"
+  _remote_guard || return 1
+
+  local body; body=$(mktemp /tmp/bp-rel.XXXXXX)
+  jq -n --arg v "$version" --arg d "$desc" \
+    '{version:$v, description:$d, changeLog:"", release:true}' > "$body"
+
+  local resp; resp=$(mktemp /tmp/bp-rel-resp.XXXXXX)
+  local code
+  code=$(curl -sk -X POST \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -d @"${body}" \
+    -o "${resp}" -w "%{http_code}" \
+    "https://${VCFA_FQDN}/blueprint/api/blueprints/${id}/versions")
+  rm -f "${body}"
+
+  if [[ "${code}" != "201" ]]; then
+    echo "ERROR: blueprint release HTTP=${code}" >&2
+    jq . "${resp}" 2>/dev/null >&2 || cat "${resp}" >&2
+    rm -f "${resp}"; return 1
+  fi
+
+  local status; status=$(jq -r '.status' "${resp}")
+  rm -f "${resp}"
+  echo "OK: released"
+  echo "    bp     = ${id}"
+  echo "    version= ${version}"
+  echo "    status = ${status}"
+
+  # catalog item id 자동 추출 → 다음 단계 (form_remote_import) 가 사용
+  echo "    (catalog 반영 대기...)"
+  local tries=0 item_id="" item_name=""
+  while (( tries < 10 )); do
+    sleep 1
+    item_id=$(curl -sk -H "Authorization: Bearer ${TOKEN}" -H "Accept: application/json" \
+      "https://${VCFA_FQDN}/catalog/api/items?page=0&size=200" \
+      | jq -r --arg n "${VCFA_BP_NAME:-}" '
+          if $n != ""
+          then (.content[]? | select(.name == $n) | .id)
+          else .content[0].id // empty
+          end' | head -1)
+    if [[ -n "$item_id" && "$item_id" != "null" ]]; then
+      break
+    fi
+    ((tries++))
+  done
+
+  if [[ -n "$item_id" && "$item_id" != "null" ]]; then
+    item_name=$(curl -sk -H "Authorization: Bearer ${TOKEN}" -H "Accept: application/json" \
+      "https://${VCFA_FQDN}/catalog/api/items/${item_id}" 2>/dev/null | jq -r '.name // ""')
+    export VCFA_CATALOG_ITEM_ID="$item_id"
+    echo "    catalog: ${item_name:-?}  item_id=${item_id}    (셸에 VCFA_CATALOG_ITEM_ID export)"
+    echo "    다음 단계: form_remote_import <form.yml>     (인자 생략된 sourceId 는 자동 사용)"
+  else
+    echo "    경고: catalog item 을 찾지 못함. 잠시 후 catalog_remote_list 로 직접 확인" >&2
+  fi
+}
+
+bp_remote_delete() {
+  local id="${1:?Usage: bp_remote_delete <blueprint-id>}"
+  _remote_guard || return 1
+  local code
+  code=$(curl -sk -X DELETE \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Accept: application/json" \
+    -o /dev/null -w "%{http_code}" \
+    "https://${VCFA_FQDN}/blueprint/api/blueprints/${id}")
+  if [[ "${code}" == "204" ]]; then
+    echo "OK: blueprint deleted — id=${id}"
+  else
+    echo "ERROR: delete HTTP=${code}" >&2; return 1
+  fi
+}
+
+bp_remote_export() {
+  # Usage: bp_remote_export <blueprint-id> [out-file]
+  # 기본 출력 경로: blueprints/exported/<name>.yaml
+  local id="${1:?Usage: bp_remote_export <blueprint-id> [out-file]}"
+  _remote_guard || return 1
+  local resp; resp=$(mktemp /tmp/bp-exp.XXXXXX)
+  vcfa_api_get "https://${VCFA_FQDN}/blueprint/api/blueprints/${id}" > "${resp}" \
+    || { rm -f "${resp}"; return 1; }
+
+  local name; name=$(jq -r '.name' "${resp}")
+  local out="${2:-blueprints/exported/${name}.yaml}"
+  mkdir -p "$(dirname "$out")"
+  jq -r '.content' "${resp}" > "$out"
+  echo "OK: exported — id=${id}  name=${name}  → ${out}"
+  ls -la "$out"
+  rm -f "${resp}"
+}
+
+# ---- Catalog ----
+
+catalog_remote_list() {
+  _remote_guard || return 1
+  local resp; resp=$(mktemp /tmp/cat.XXXXXX)
+  vcfa_api_get "https://${VCFA_FQDN}/catalog/api/items?page=0&size=200" > "${resp}" \
+    || { rm -f "${resp}"; return 1; }
+  {
+    printf 'NAME\tITEM_ID\tTYPE\n'
+    jq -r '.content[]? | [.name, .id, (.type.id // .type // "?")] | @tsv' "${resp}"
+  } | column -t -s $'\t'
+  rm -f "${resp}"
+}
+
+# ---- Form ----
+
+form_remote_import() {
+  # Usage: form_remote_import <form-file> [catalog-item-id]
+  # catalog-item-id 생략 시 VCFA_CATALOG_ITEM_ID (이전 release 의 자동 산출) 사용.
+  local f="${1:?Usage: form_remote_import <form-file> [catalog-item-id]}"
+  local src="${2:-${VCFA_CATALOG_ITEM_ID:-}}"
+  if [[ -z "$src" ]]; then
+    echo "ERROR: catalog-item-id 필요. 인자로 주거나, bp_remote_release 직후 호출 (VCFA_CATALOG_ITEM_ID 자동 세팅)" >&2
+    return 1
+  fi
+  [[ -f "$f" ]] || { echo "ERROR: file not found: $f" >&2; return 1; }
+  _remote_guard || return 1
+
+  local form_str; form_str=$(jq -Rs '.' < "$f")
+  local body; body=$(mktemp /tmp/form-imp.XXXXXX)
+  jq -n --arg src "$src" --argjson form "$form_str" \
+    '{name:"default", type:"requestForm", sourceId:$src, sourceType:"com.vmw.blueprint", form:$form, formFormat:"YAML", status:"ON"}' > "$body"
+
+  local hdr; hdr=$(mktemp /tmp/form-imp-hdr.XXXXXX)
+  local resp; resp=$(mktemp /tmp/form-imp-resp.XXXXXX)
+  local code
+  code=$(curl -sk -X POST \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -d @"${body}" \
+    -D "${hdr}" \
+    -o "${resp}" -w "%{http_code}" \
+    "https://${VCFA_FQDN}/form-service/api/forms")
+  rm -f "${body}"
+
+  if [[ "${code}" != "201" ]]; then
+    echo "ERROR: form import HTTP=${code}" >&2
+    jq . "${resp}" 2>/dev/null >&2 || cat "${resp}" >&2
+    rm -f "${hdr}" "${resp}"; return 1
+  fi
+
+  # form id 는 Location 헤더에서 추출
+  local loc form_id
+  loc=$(awk -F': ' 'tolower($1)=="location"{gsub(/\r/,"",$2);print $2; exit}' "${hdr}")
+  form_id="${loc##*/}"
+  rm -f "${hdr}" "${resp}"
+
+  export VCFA_FORM_ID="$form_id"
+  echo "OK: form imported"
+  echo "    file     = ${f}"
+  echo "    source   = ${src}  (catalog item)"
+  echo "    form-id  = ${form_id}    (셸에 VCFA_FORM_ID export)"
+}
+
+form_remote_delete() {
+  local id="${1:?Usage: form_remote_delete <form-id>}"
+  _remote_guard || return 1
+  local code
+  code=$(curl -sk -X DELETE \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Accept: application/json" \
+    -o /dev/null -w "%{http_code}" \
+    "https://${VCFA_FQDN}/form-service/api/forms/${id}")
+  if [[ "${code}" == "204" || "${code}" == "200" ]]; then
+    echo "OK: form deleted — id=${id}"
+  else
+    echo "ERROR: delete HTTP=${code}" >&2; return 1
+  fi
+}
+
+# ============================================================
+# All-in-one — blueprint import → release → form (한 줄로)
+# ============================================================
+
+content_publish() {
+  # Usage: content_publish <blueprint.yaml> [form.yml] [bp-name]
+  # blueprint 만 주면 release 까지. form 도 주면 form 적용까지.
+  local bp="${1:?Usage: content_publish <blueprint.yaml> [form.yml] [bp-name]}"
+  local form="${2:-}"
+  local name="${3:-}"
+  [[ -f "$bp" ]] || { echo "ERROR: blueprint file not found: $bp" >&2; return 1; }
+  if [[ -n "$form" ]]; then
+    [[ -f "$form" ]] || { echo "ERROR: form file not found: $form" >&2; return 1; }
+  fi
+  _remote_guard || return 1
+
+  echo "[1/3] blueprint import"
+  if [[ -n "$name" ]]; then
+    bp_remote_import "$bp" "$name" || return 1
+  else
+    bp_remote_import "$bp" || return 1
+  fi
+
+  echo ""
+  echo "[2/3] release + catalog 등록"
+  bp_remote_release || return 1
+
+  if [[ -n "$form" ]]; then
+    echo ""
+    echo "[3/3] form 적용"
+    form_remote_import "$form" || return 1
+  else
+    echo ""
+    echo "[3/3] form 생략"
+  fi
+
+  echo ""
+  echo "=== 완료 ==="
+  echo "  VCFA_BP_ID           = ${VCFA_BP_ID}"
+  echo "  VCFA_CATALOG_ITEM_ID = ${VCFA_CATALOG_ITEM_ID:-?}"
+  [[ -n "${VCFA_FORM_ID:-}" ]] && echo "  VCFA_FORM_ID         = ${VCFA_FORM_ID}"
+  echo ""
+  echo "  → 정리: bp_remote_delete (blueprint + catalog + form 자동)"
+}
+
+# ============================================================
+# 일괄 import — blueprints/ 의 모든 운영 파일 + 짝 form 까지 한 번에
+# ============================================================
+
+content_publish_all() {
+  # Usage: content_publish_all [--include-archive] [--cleanup-on-fail]
+  # 기본: blueprints/ 의 archive/ 제외 모든 *.yaml/*.yml 을 import → release → 짝 form 적용.
+  # 짝 form 은 content_pairs 와 동일한 키 매칭 규칙 사용.
+  # --cleanup-on-fail: release/form 실패 시 그 단계에서 만들어진 DRAFT blueprint 자동 삭제 (서버 잔여물 방지).
+  local include_archive=0 cleanup_on_fail=0
+  for arg in "$@"; do
+    case "$arg" in
+      --include-archive)  include_archive=1 ;;
+      --cleanup-on-fail)  cleanup_on_fail=1 ;;
+    esac
+  done
+
+  _remote_guard || return 1
+  local root; root=$(_content_root)
+  local bp_dir="${root}/blueprints" form_dir="${root}/forms"
+
+  # archive 제외 (기본)
+  local find_args=("-type" "f" "(" "-name" "*.yaml" "-o" "-name" "*.yml" ")")
+  [[ "$include_archive" -eq 0 ]] && find_args+=("!" "-path" "*/archive/*")
+
+  local files=()
+  while IFS= read -r f; do files+=("$f"); done < <(find "$bp_dir" "${find_args[@]}" | sort)
+  if [[ ${#files[@]} -eq 0 ]]; then
+    echo "blueprints/ 에 import 할 파일이 없음 (archive 제외)." >&2
+    return 0
+  fi
+
+  echo "=== 일괄 import 대상 (${#files[@]} 개) ==="
+  printf '  %s\n' "${files[@]}" | sed "s|${root}/||"
+  echo ""
+
+  local bp_file form_file key fkey results=() rc_global=0
+  for bp_file in "${files[@]}"; do
+    local rel="${bp_file#${root}/}"
+    echo "==================================================================="
+    echo "▶ ${rel}"
+    echo "==================================================================="
+
+    # 1) blueprint import + release
+    bp_remote_import "$bp_file" || { results+=("FAIL  ${rel}  (import)"); rc_global=1; continue; }
+    local imported_bp_id="${VCFA_BP_ID:-}"
+    if ! bp_remote_release; then
+      results+=("FAIL  ${rel}  (release)")
+      rc_global=1
+      if [[ "$cleanup_on_fail" -eq 1 && -n "$imported_bp_id" ]]; then
+        echo "  cleanup: 실패한 DRAFT blueprint 삭제 ($imported_bp_id)"
+        bp_remote_delete "$imported_bp_id" || true
+      fi
+      continue
+    fi
+
+    # 2) 짝 form 찾기 (파일명 키 매칭)
+    key=$(basename "$bp_file" | sed -E 's/\.(yaml|yml)$//; :a; s/^(blueprint_|custom_|vra_|vcfa_)//; ta')
+    form_file=""
+    while IFS= read -r ff; do
+      fkey=$(basename "$ff" | sed -E 's/\.(yaml|yml)$//; :a; s/^(blueprint_|custom_|vra_|vcfa_)//; ta')
+      if [[ "$fkey" == "$key" ]]; then form_file="$ff"; break; fi
+    done < <(find "$form_dir" -type f \( -name "*.yaml" -o -name "*.yml" \) ! -path "*/archive/*" | sort)
+
+    if [[ -n "$form_file" ]]; then
+      echo ""
+      echo "  ▷ 짝 form: ${form_file#${root}/}"
+      if form_remote_import "$form_file"; then
+        results+=("OK    ${rel}  + ${form_file#${root}/}")
+      else
+        results+=("PARTIAL ${rel}  (form 실패)")
+        rc_global=1
+        if [[ "$cleanup_on_fail" -eq 1 && -n "$imported_bp_id" ]]; then
+          echo "  cleanup: form 실패 → blueprint 도 삭제 ($imported_bp_id)"
+          bp_remote_delete "$imported_bp_id" || true
+        fi
+      fi
+    else
+      results+=("OK    ${rel}  (짝 form 없음 — skip)")
+    fi
+    echo ""
+  done
+
+  echo "==================================================================="
+  echo "=== 결과 요약 ==="
+  echo "==================================================================="
+  printf '%s\n' "${results[@]}"
+  echo ""
+  echo "현재 서버 상태:"
+  bp_remote_list
+  echo ""
+  catalog_remote_list
+
+  return $rc_global
+}

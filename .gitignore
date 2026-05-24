@@ -1,1 +1,7 @@
 .ssh/
+
+# 로컬 환경/시크릿
+.env
+.env.*
+!.env.example
+scripts/config.local.*

@@ -1,0 +1,246 @@
+# Worklog
+
+> 누적형 작업 로그. 새 파일을 만들지 않고 이 파일에만 append.
+> 의미 있는 작업 단위만 기록. 단순 조회/포맷 변경/사소한 확인은 한 줄 또는 생략.
+> 형식: 각 엔트리는 `## YYYY-MM-DD — 제목` 헤더 + 아래 8필드.
+
+---
+
+## 2026-05-24 — 최상위 README: paste-and-run + .env.example 신설
+
+- **상태**: DONE
+- **한 일**:
+  - 최상위 [README.md](../README.md) 의 빠른 시작을 **4개 자산(packages/blueprints/forms) 전체 업로드** 한 블록으로 통합. 토큰 발급 → `/vco/api/packages` → `/blueprint/api/blueprints` + release → `/form-service/api/forms` 순.
+  - [.env.example](../.env.example) 신설 — `VCFA_URL/USER/PASSWORD/DOMAIN/PROJECT_NAME` 템플릿. README에서 `cp .env.example .env && vi .env && source .env` 흐름으로 안내.
+  - `.gitignore`는 이미 `.env` 제외 + `!.env.example` 예외라 추가 변경 없음.
+- **수정한 파일**: [README.md](../README.md), [.env.example](../.env.example)
+- **검증**: `git check-ignore` 로 `.env` 제외 / `.env.example` 커밋 가능 확인. 실 호출 미검증.
+- **중복 방지 메모**: 자산 업로드 예시는 **최상위 README 한 곳에만**. 폴더별 README는 UI 위주 + 세부 endpoint 검증 노트만.
+
+---
+
+## 2026-05-24 — 자산별 REST 빠른 시작에 토큰 발급 인라인 (paste-and-run)
+
+- **상태**: DONE
+- **한 일**: blueprints/forms/packages 의 "REST API (curl) 로 업로드" 절을 자체 완결로 재구성. 환경값 + 토큰 발급(`/csp/gateway/am/api/login` → `/iaas/api/login`) + AUTH 배열까지 한 블록으로 박아, 위에서부터 그대로 paste하면 토큰 발급부터 업로드까지 즉시 실행. forms에는 PROJECT_ID 조회까지 0번 블록에 포함.
+- **수정한 파일**: [blueprints/README.md](../blueprints/README.md), [forms/README.md](../forms/README.md), [packages/README.md](../packages/README.md)
+- **검증**: 세 README 모두 "0) 환경값 + 토큰 발급 → 1) ... → 2) ..." 순서로 통일. deploy.md §6은 endpoint 검증 포인트(환경 캡처) 참조 용도로만 유지 — 중복은 토큰 블록뿐(의도된 중복, paste-and-run 원칙 우선). 실 환경 호출은 미검증.
+- **남은 작업**: 환경 캡처값으로 endpoint·페이로드 키 확정.
+- **중복 방지 메모**: 토큰 블록은 세 자산 README에서 동일 — endpoint나 인자가 환경에 따라 달라지면 세 곳 동시 갱신. 그 외 자산별 차이만 1)/2) 절에.
+- **주의사항**: 시크릿은 항상 env, 토큰 echo 금지(길이만). `CURL_K=()` 가 운영 기본, `(-k)` 는 검증용 한정.
+
+---
+
+## 2026-05-24 — Terraform 영역 제거 + 자산별 "VCFA 업로드 REST" 정리
+
+- **상태**: DONE
+- **한 일**:
+  - 사용자가 `terraform/` 폴더를 삭제 → 관련 자료 일괄 제거:
+    - [.gitignore](../.gitignore) — TF 패턴 제거, 일반 시크릿 패턴만 유지
+    - [README.md](../README.md) — terraform/ 행 제거, "scripts/ 자동화" 자리도 없앰 (사용자 의도 아님)
+    - [docs/context.md](context.md) — terraform/ 행 + scripts/ 행 제거
+    - [docs/architecture.md](architecture.md) — `terraform/` 트리 및 "Terraform 영역" 절 제거
+    - [docs/runbooks/offline-setup.md](runbooks/offline-setup.md) — TF mirror 절 제거, vRO 패키지 무결성·이전 매체·시크릿·REST 포인터 위주로 재작성
+  - 자산별 README에 **VCFA에 업로드하기 위한 REST/curl 절** 추가 (사용자 요청: "스크립트 만들지 말고 요청 방법을 README에 정리"):
+    - [docs/runbooks/deploy.md §6](runbooks/deploy.md) — 공통 토큰 발급 절차(2단계: `/csp/gateway/am/api/login` → `/iaas/api/login`) + `VCFA_TOKEN` env로 노출 + 환경 캡처 검증 포인트
+    - [blueprints/README.md](../blueprints/README.md) — `POST /blueprint/api/blueprints` 생성/업데이트, `POST /blueprint/api/blueprints/{id}/versions` 릴리스
+    - [forms/README.md](../forms/README.md) — `/catalog/api/sources` → `/catalog/api/items` → `POST /form-service/api/forms` 패턴
+    - [packages/README.md](../packages/README.md) — `POST /vco/api/packages` multipart (공통 인증 참조로 단순화)
+    - [actions/README.md](../actions/README.md) — 액션 단위 API보다 패키지 단위 권장, [packages/README.md](../packages/README.md) 로 연결
+  - 메모리 갱신: `project_vcfa_scope.md` (TF 제외), `feedback_vcfa_scope_includes_terraform.md` (OBSOLETE 표시 + 여전히 유효한 부분만 보존), `MEMORY.md` 라인 갱신.
+- **픽스한 내용**:
+  - 사용자가 폴더만 지웠을 때 흩어져 있던 TF 참조 제거 (`.gitignore` 6개 패턴, 5개 문서, 메모리 2개).
+  - REST 절 중복 제거 — 공통 토큰 발급은 [deploy.md §6](runbooks/deploy.md) 한 곳에만, 각 자산은 거기를 참조.
+- **수정한 파일**:
+  - 갱신: [.gitignore](../.gitignore), [README.md](../README.md), [docs/context.md](context.md), [docs/architecture.md](architecture.md), [docs/runbooks/offline-setup.md](runbooks/offline-setup.md), [docs/runbooks/deploy.md](runbooks/deploy.md), [blueprints/README.md](../blueprints/README.md), [forms/README.md](../forms/README.md), [packages/README.md](../packages/README.md), [actions/README.md](../actions/README.md)
+  - 메모리: `project_vcfa_scope.md`, `feedback_vcfa_scope_includes_terraform.md`, `MEMORY.md`
+- **검증**:
+  - `grep -rE "terraform|tfstate|tfvars|vmware/vcfa|providers\.tf"` 으로 잔존 TF 키워드 확인 → 본 worklog 엔트리(이력)만 남음.
+  - REST endpoint 사실: vRO 패키지 `/vco/api/packages`는 vRO 8.x 공식 문서 패턴. VCFA 블루프린트 `/blueprint/api/blueprints`·폼 `/form-service/api/forms` 는 vRA 8.x 문서 기준이며 VCFA 9에서 보편적이지만 환경별 base URL prefix는 **"환경 캡처로 확정 필요"** 로 모든 README에 명시.
+  - 토큰 2단계 (`/csp/gateway/am/api/login` → `/iaas/api/login`)도 vRA 8.x 문서 기준. 환경 다르면 DevTools 캡처로 교체 안내.
+  - 전체 문서 상대 링크 자동 검사 → 0 broken (이전 turn 검사 통과 후 link 변경 없음).
+  - 실 VCFA에서의 curl 호출 동작은 환경 부재로 **미검증**.
+- **실패/미완성**:
+  - VCFA 9 번들 환경의 정확한 base URL prefix·토큰 응답 키 미검증. 사용자가 한 번 캡처해 README 값을 교체 권장.
+  - 자동화 스크립트 의도적으로 안 만듦 (사용자 요청 아님). 필요 시 별도 요청 시 추가.
+- **남은 작업**:
+  - 사용자 환경 캡처값으로 4개 README의 endpoint·페이로드 확정.
+  - `roles_management`·`importing_resources` 같은 별도 자산 도입 여부는 사용자 결정 대기.
+- **중복 방지 메모**:
+  - **Terraform은 본 리포 범위에서 제외**. 다시 인프라 깔지 말 것.
+  - REST 토큰 절차는 [deploy.md §6](runbooks/deploy.md) **한 곳에만**. 자산 README는 거기를 참조.
+  - 각 자산 README의 "환경 검증 포인트"는 같은 패턴 — UI 한 번 + DevTools 캡처.
+  - 스크립트(`scripts/`)는 사용자가 명시 요청할 때만.
+- **주의사항**:
+  - 토큰 자체·비밀번호는 로그에 절대 echo 금지(길이만 출력하는 패턴 유지).
+  - `INSECURE=1` (curl -k) 은 검증 단계 한정, 운영 금지.
+  - `archive/` 폴더 자산은 REST 업로드 시에도 사용 금지.
+
+---
+
+## 2026-05-24 — terraform/ state lock·이식성·remote backend 절 추가
+
+- **상태**: DONE
+- **한 일**: `terraform/README.md` (삭제됨) 에 "State 잠금 해제 · 다른 머신/CI에서 배포" 섹션 추가. 네 가지 항목:
+  - A) **State lock stuck → `terraform force-unlock`** + 대기 옵션(`-lock-timeout`). 파일 직접 삭제·`-lock=false` 는 비권장으로 명시.
+  - B) **Dependency lock (.terraform.lock.hcl) 의 플랫폼 호환성** → `terraform providers lock -platform=linux_amd64 -platform=darwin_arm64 -platform=windows_amd64` 로 multi-platform 해시 추가.
+  - C) **`backend "local"` 한계 → remote backend 전환** (s3+DynamoDB, gcs, azurerm, pg, consul, Terraform Cloud 비교표) + `terraform init -migrate-state` 절차 + `data "terraform_remote_state"` backend 동일 교체.
+  - D) **CI 권장 옵션**: `-input=false`, `-lock-timeout`, `-out=tfplan` plan/apply 분리.
+- **픽스한 내용**: 그동안 quick start에 박혀 있던 `backend "local" {}` 의 다중 위치 한계를 명시적으로 표기. 사용자가 "다른 곳에서 배포할 때 lock 해제 필요" 라고 지적 → 정정.
+- **수정한 파일**: `terraform/README.md` (삭제됨), [worklog.md](worklog.md)
+- **검증**:
+  - `terraform force-unlock`, `-lock-timeout`, `terraform providers lock -platform=`, `terraform init -migrate-state` 모두 표준 Terraform CLI 명령 (provider 비종속). HashiCorp 공식 문서 명령 그대로.
+  - 구체 backend 설정값(bucket·DynamoDB table 이름 등)은 환경 의존이라 예시로만 표기, 실제 값 박지 않음.
+- **실패/미완성**: 실 환경 검증 미수행(환경 부재). backend 전환은 사용자 환경에 맞춰 선택.
+- **남은 작업**:
+  - 사용자 환경에서 선택한 backend 확정 → README 예시 교체.
+  - CI 도입 시 `-out=tfplan` 산출물 보관 정책 결정.
+- **중복 방지 메모**: state lock·dependency lock·backend 한계는 terraform/README.md 한 섹션에만. 다른 곳에 다시 풀어 쓰지 말 것.
+- **주의사항**:
+  - `terraform force-unlock` 은 lock holder가 실제로 돌고 있지 않을 때만 — 동시 실행 중 force-unlock 하면 state 파괴 위험.
+  - `-lock=false` 사용 금지.
+  - remote backend 도입 시 credential은 backend별 표준 메커니즘(AWS env, GCP ADC 등)으로만 — 코드/git 금지.
+
+---
+
+## 2026-05-24 — terraform/ multi-stack 패턴 + .gitignore 보강
+
+- **상태**: DONE
+- **한 일**:
+  - `terraform/README.md` (삭제됨) 재정리. quick start를 3 단계로 분리:
+    (1) 오프라인 mirror 준비 + 결과 트리 검증, (2) `stacks/connection/` 만들기 (provider 접속/공통 outputs 한 곳), (3) `stacks/orgs/` 만들기 (`data "terraform_remote_state"` 로 connection outputs 참조 + 시크릿은 `TF_VAR_*` env로만 주입).
+  - 대안으로 공통 tfvars 공유 패턴(`stacks/_shared/connection.tfvars`)도 짧게 기재.
+  - 모든 코드 블록을 **그대로 복사·실행 가능한 bash heredoc** 형태로 통일. HCL 파일 내용은 `cat > file << 'EOF' ... EOF`로 생성 (작은따옴표 sentinel로 셸 치환 차단).
+  - 이전 버전에서 깨져 있던 `cat << EOF >` 누락·블록 펜스 누락·HCL/bash 혼재 모두 정정.
+- **픽스한 내용**:
+  - [.gitignore](../.gitignore) 보강 — `terraform/**/.terraform/`, `terraform/**/terraform.tfstate*`, `*.auto.tfvars`, `terraform/providers/mirror/` 제외. `.terraform.lock.hcl`은 의도적으로 커밋(해시 핀, 시크릿 없음).
+- **수정한 파일**: `terraform/README.md` (삭제됨), [.gitignore](../.gitignore), [worklog.md](worklog.md)
+- **검증**:
+  - heredoc 종결 / 코드 블록 펜스 / 변수 인용 모두 수동 확인.
+  - `terraform_remote_state` 패턴은 표준 Terraform 기능 (provider 비종속).
+  - `vmware/vcfa` 리소스 인자(예: `vcfa_org`의 `name`/`display_name` 등)는 본 README에 박지 않고 upstream Registry 페이지로 링크 — 인자명을 추측해 적지 않기.
+- **실패/미완성**:
+  - 실제 `terraform/stacks/{connection,orgs}/` 파일은 아직 생성하지 않음 — README가 절차이므로 사용자 환경값으로 실행 시 생성됨.
+  - VCFA 환경에서 `terraform init` ~ `apply` 까지 실 검증은 환경 부재로 미수행.
+- **남은 작업**:
+  - 사용자가 한 번 실행해본 뒤 실제로 만들어진 파일을 리포에 커밋할지 결정.
+  - `stacks/roles/`, `stacks/content-libraries/` 추가 시 동일 패턴 적용.
+- **중복 방지 메모**:
+  - Terraform multi-stack 패턴 표준은 `terraform_remote_state` (1순위) / 공통 tfvars (2순위). 다른 패턴 도입 시 사유 기록.
+  - 시크릿은 항상 `TF_VAR_*` env로만. 파일·tfvars·git 어디에도 금지.
+- **주의사항**:
+  - `terraform.tfvars`에 비-시크릿(`vcfa_url`, `vcfa_user`)은 들어가도 됨. password/token은 절대 금지.
+  - `*.auto.tfvars`는 이름만 맞으면 자동 로드되므로 사고 위험 → 본 리포에서는 `-var-file` 명시 사용 권장 (gitignore도 그에 맞춤).
+
+---
+
+## 2026-05-24 — 폴더별 README + REST 자동화 절 추가, 사용자 피드백 반영
+
+- **상태**: DONE (사용자 피드백 반영 결과 — 이전 자기 작업의 잘못된 추정 정정 포함)
+- **한 일**:
+  - 각 자산 폴더에 quick start를 가진 README 신설/재작성:
+    - [blueprints/README.md](../blueprints/README.md) — Cloud Assembly Test/Release 절차
+    - [forms/README.md](../forms/README.md) — Custom Form Import 절차, 짝 매핑
+    - [actions/README.md](../actions/README.md) — 패키지/개별 등록 + REST 포인터
+    - [packages/README.md](../packages/README.md) — UI + **`POST /vco/api/packages` curl 패턴** (vRO 8.x 표준, VCFA 환경 검증 포인트 명시)
+    - `terraform/README.md` (삭제됨) — `vmware/vcfa` provider scope를 upstream 가이드 직접 인용으로 확정 (`vcfa_org` / `vcfa_org_local_user` / `vcfa_content_library` / `vcfa_role` / `vcfa_global_role` / `vcfa_rights_bundle` / data sources `vcfa_right` 등)
+  - 최상위 [README.md](../README.md)를 폴더 인덱스 + 매칭표 중심으로 슬림화. "빠른 시작 = 산출물 임포트 가능한 상태까지", 운영 절차는 runbook으로 분리.
+  - offline-setup runbook에 `vmware/vcfa` 단일 provider 기준 + provider 인증 블록 + 환경변수 + `-platform` 옵션 + lock 파일 이전 항목 보강.
+- **픽스한 내용** (이전 작업의 잘못된 추정을 사용자가 지적 → 정정):
+  - 잘못 박았던 generic provider 예시(`hashicorp/vsphere`, `vmware/vcd`, `vmware/nsxt`)를 모두 제거 — 이 리포는 VCFA 전용.
+  - "Terraform이 본 워크플로우와 무관할 수 있다"는 잘못된 추측 철회 — VCFA 관련이면 Terraform도 명시적으로 포함. `terraform/`는 분류일 뿐 범위 제외 아님.
+  - "빠른 시작"에 UI 5단계 + 입력+Submit까지 묶었던 것을 정정 → 빠른 시작은 임포트 가능한 상태까지, 그 이후 절차는 runbook으로.
+- **수정한 파일**:
+  - 신설: `blueprints/README.md`, `forms/README.md`, `actions/README.md`, `packages/README.md`
+  - 갱신: `README.md`, `terraform/README.md`, `docs/runbooks/offline-setup.md`
+- **검증**:
+  - Terraform provider 사실(`vmware/vcfa`, version `~> 1.1.0`, VCFA 9+ 지원, 인증 인자, 환경변수, 리소스/데이터 소스 이름)은 사용자가 알려준 upstream URL을 직접 fetch해 인용. [importing_resources](https://registry.terraform.io/providers/vmware/vcfa/latest/docs/guides/importing_resources), [roles_management](https://registry.terraform.io/providers/vmware/vcfa/latest/docs/guides/roles_management), `vmware/terraform-provider-vcfa` README 및 `docs/index.md`.
+  - 폴더별 README의 내부 상대 링크 깨짐 검사 — 모두 해석됨.
+  - REST 자동화 curl 예시는 vRO 8.x 표준 `POST /vco/api/packages` 패턴까지만 확정 게재. **VCFA 9 번들 Orchestrator의 base URL prefix와 인증 헤더는 라이브 검증 환경 없어 "확인 필요"로 명시.** 권장 검증 절차(브라우저 DevTools로 UI 호출 캡처)도 함께 기재.
+- **실패/미완성**:
+  - VCFA 번들 Orchestrator의 정확한 REST 엔드포인트/인증 헤더 미검증. 사용자가 실 환경에서 캡처해 확정 후 packages/README 갱신 권장.
+- **남은 작업**:
+  - VCFA에 적합한 토큰 발급 API 명시 (현재 자리만 잡힘).
+  - terraform/stacks/ 하위 구조(예: `orgs/`, `roles/`, `content-libraries/`) 도입 여부 결정.
+- **중복 방지 메모**:
+  - 자산 quick start는 각 폴더 README 한 곳에만. 최상위 README/runbook에 같은 내용 다시 쓰지 말 것.
+  - Terraform provider 예시는 항상 `vmware/vcfa` 만. 다른 provider 추가는 사용자 명시 요청 시에만.
+- **주의사항**:
+  - REST/curl 예시의 인증 헤더·base URL은 환경에 따라 다르므로 그대로 사용 금지 — 캡처 후 교체.
+  - 시크릿(비밀번호·토큰)은 절대 커밋 금지, 환경변수/vault로만 주입.
+
+---
+
+## 2026-05-24 — README 예시 중심으로 재작성
+
+- **상태**: DONE
+- **한 일**: README를 산문 설명형 → **명령/경로 예시 중심**으로 교체. 폴더 트리·매칭표·자주 바꾸는 입력·`terraform providers mirror` 예시 포함. Terraform 자동화 부재를 명시("직접 채워야 함").
+- **수정한 파일**: [README.md](../README.md)
+- **검증**: 링크 5개 대상 실재 확인(`blueprints/vm/*`, `forms/vm/*`, `forms/cluster/*`, `terraform/providers/`, `docs/runbooks/offline-setup.md`).
+- **중복 방지 메모**: 디테일은 docs/runbooks/* 에만. README에 절차를 다시 풀어 쓰지 말 것.
+
+---
+
+## 2026-05-24 — 폴더 유형별 재배치 + 오프라인/배포 런북
+
+- **상태**: DONE
+- **한 일**:
+  - 루트에 흩어져 있던 자산을 유형별 폴더로 이동(`blueprints/{vm,cluster,archive}/`, `forms/{vm,cluster,archive}/`, `packages/`). `git mv`로 이력 보존.
+  - `actions/` 는 vRO 모듈 ID와 일치하므로 그대로 유지(`com.vmk`, `com.vmk.dk`).
+  - 오프라인 Terraform 산출물 위치 마련: `terraform/providers/` + 설명 `terraform/README.md`.
+  - 런북 2종 추가: [docs/runbooks/offline-setup.md](runbooks/offline-setup.md) (TF provider 오프라인 미러·서명 검증·시크릿 처리), [docs/runbooks/deploy.md](runbooks/deploy.md) (어디를 수정 → vRO/CA/SB import → 배포 → 트러블슈팅).
+  - README/context/architecture/security/tech-debt의 경로·링크를 새 구조로 일괄 갱신.
+- **픽스한 내용**: 코드/블루프린트 본문은 변경 없음. 파일 이동 + 문서만.
+- **수정한 파일**:
+  - 이동(10): `blueprint_*.yaml` → `blueprints/{vm,cluster,archive}/`, `custom_*.yml` → `forms/{vm,cluster,archive}/`, `com.dk.package` → `packages/`
+  - 신설: `terraform/README.md`, `docs/runbooks/offline-setup.md`, `docs/runbooks/deploy.md`
+  - 갱신: [README.md](../README.md), [docs/context.md](context.md), [docs/architecture.md](architecture.md), [docs/security.md](security.md), [docs/tech-debt.md](tech-debt.md)
+- **검증**:
+  - `git status` 가 모든 이동을 `R` (rename)로 인식 — 이력 보존 확인.
+  - 블루프린트는 `$data` URL 경로만 사용(로컬 cross-ref 없음)이므로 폴더 이동이 동작에 영향 없음을 사전에 grep으로 확인.
+  - README/문서 내 새 링크 대상이 실재함을 폴더 재배치 후 `ls`로 확인.
+  - vRO/Cloud Assembly import·실제 배포는 **검증하지 않음** (해당 환경 없음).
+- **실패/미완성**: 없음.
+- **남은 작업**:
+  - 중복 [forms/archive/custom_vra_cluster.yml](../forms/archive/custom_vra_cluster.yml) 삭제 여부 결정 (사용처 확인 후).
+  - `*_original` 백업 보존 정책 결정 → `docs/decisions/`.
+  - Terraform 실제 HCL 코드가 추가되면 `terraform/stacks/` 등 하위 구조 결정.
+  - 오프라인 미러를 git에 둘지 외부 아티팩트 저장소에 둘지 결정.
+- **중복 방지 메모**:
+  - 폴더 구조는 이미 재배치 완료. 다시 만들지 말 것. 새 자산은 유형에 맞는 기존 폴더에 추가.
+  - 런북은 `runbooks/`에 새 파일을 만들기보다 기존 두 개를 갱신할 것.
+- **주의사항**:
+  - `actions/com.vmk.dk/` 파일명/구조는 vRO 액션 ID와 일치 — rename·이동 금지(블루프린트의 `$data` URL이 깨짐).
+  - provider 바이너리·시크릿은 커밋 금지.
+
+---
+
+## 2026-05-24 — 문서 인프라 초기 셋업
+
+- **상태**: DONE
+- **한 일**:
+  - `docs/` 디렉터리 신설 (context, architecture, security, tech-debt, worklog)
+  - README.md를 한 줄짜리에서 사용법 중심 개요로 교체
+  - 리포 내 직접 확인된 사실만 기재 (블루프린트/폼 파일 수, vRO 액션·매니저 목록, 비밀번호 보호 속성, 중복 파일)
+- **픽스한 내용**: 해당 없음 (코드 변경 없음, 문서 신설만)
+- **수정한 파일**:
+  - `README.md` (교체)
+  - `docs/context.md` (신설)
+  - `docs/architecture.md` (신설)
+  - `docs/security.md` (신설)
+  - `docs/tech-debt.md` (신설)
+  - `docs/worklog.md` (신설, 본 엔트리)
+- **검증**:
+  - 모든 사실은 직접 파일을 읽거나 명령(`wc -l`, `diff -q`, `unzip -l`, `file`)으로 확인.
+  - vRO 런타임 동작은 검증하지 않음 (이 환경에 vRO 인스턴스 없음).
+- **실패/미완성**: 없음
+- **남은 작업** (다음 세션에서 결정):
+  - `custom_cluster.yml` ↔ `custom_vra_cluster.yml` 중복 해소 (사용처 확인 후)
+  - `*_original.*` 보존 정책 결정 → 결정 시 `docs/decisions/`에 기록
+  - vRO 액션 파일명 오타(`Stroage`, `getUbuntuVersion` 확장자 누락) 정리 여부 — vRO 측 액션 ID 호환성 확인 필요
+- **중복 방지 메모**:
+  - `docs/` 구조와 README는 이미 설정됨. 다음 세션에서 다시 생성하지 말 것.
+  - 코드/블루프린트는 본 작업에서 **건드리지 않음** — 사용자 명시 요청 전까지 그대로 유지.
+- **주의사항**:
+  - 새 문서/엔트리 추가 시 추측 금지. 확인되지 않은 내용은 "미확인"으로 명시.
+  - 비밀(시크릿/토큰/평문 비밀번호)을 로그·문서·예시에 포함하지 말 것.
