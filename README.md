@@ -131,3 +131,17 @@ vcfa_namespace_set_storage_limit_cci storage_limit_mib=2560000
 | `cpu_*_mhz` / `cpu_*_ghz` / `cpu_*_thz` | MHz / GHz / THz |
 | `mem_*_mib` / `mem_*_gib` / `mem_*_tib` | MiB / GiB / TiB |
 | `storage_limit_mib` / `storage_limit_gib` / `storage_limit_tib` | MiB / GiB / TiB |
+
+
+## 기타
+### OIDC Redirect URL
+
+```bash
+ORG_UUID="${VCFA_ORG_ID##*:}"
+echo "ORG_UUID=${ORG_UUID}"
+
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: application/*+json;version=10.0.0.0-alpha" \
+  "https://$VCFA_FQDN/api/admin/org/${ORG_UUID}/settings/oauth" \
+  | jq '.orgRedirectUri'
+```
