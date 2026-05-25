@@ -586,7 +586,7 @@ bp_select_export() {
   echo ""
   echo "저장 위치: ${sub}/blueprint_<name>.yaml"
   printf "번호 [1-%s] (q=취소): " "$n"
-  local choice; read -r choice
+  local choice; _vcfa_read_line choice
   if [[ "$choice" == "q" ]]; then echo "취소"; rm -f "${resp}"; return 1; fi
   if ! [[ "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > n )); then
     echo "ERROR: invalid choice." >&2; rm -f "${resp}"; return 1
@@ -738,12 +738,12 @@ form_select_export() {
   echo "   (셸에 VCFA_FORM_ID 가 살아있으면 기본값으로 사용)"
   echo ""
   printf "form-id [%s] (q=취소): " "${VCFA_FORM_ID:-입력 필요}"
-  local fid; read -r fid
+  local fid; _vcfa_read_line fid
   fid="${fid:-${VCFA_FORM_ID:-}}"
   if [[ "$fid" == "q" || -z "$fid" ]]; then echo "취소"; return 1; fi
 
   printf "파일명에 쓸 이름 [%s]: " "form-${fid:0:8}"
-  local pretty; read -r pretty
+  local pretty; _vcfa_read_line pretty
   pretty="${pretty:-form-${fid:0:8}}"
 
   form_remote_export "$fid" "${sub}/" "$pretty"

@@ -25,6 +25,25 @@ require_cmd() {
   fi
 }
 
+# Portable read for 대화형 prompt.
+# Usage: _vcfa_read_line <varname>
+# 동작:
+#   - bash: read -e -r → readline 활성 (화살표/backspace/history)
+#   - zsh:  기본 plain read -r (vared 는 환경에 따라 prompt 를 깨먹어서 opt-in).
+#           화살표 키 라인 에디팅을 원하면: export VCFA_READ_USE_VARED=1
+#   - 그 외: plain read -r
+_vcfa_read_line() {
+  local __vrl_target="${1:?_vcfa_read_line: varname required}"
+  if [[ -n "${BASH_VERSION:-}" ]]; then
+    read -e -r "${__vrl_target}"
+  elif [[ -n "${ZSH_VERSION:-}" && -n "${VCFA_READ_USE_VARED:-}" ]]; then
+    eval "${__vrl_target}=\"\""
+    vared "${__vrl_target}"
+  else
+    read -r "${__vrl_target}"
+  fi
+}
+
 vcfa_check_env() {
   require_cmd curl || return 1
   require_cmd jq || return 1
@@ -251,6 +270,15 @@ _vcfa_ensure_org_id() {
   fi
 }
 
+# 내부: 현재 token 의 실제 org 를 "name<TAB>id" 로 반환.
+# Why: tenant 모드에서 list/select 헤더가 env var (VCFA_ORG_NAME) 만 echo 하면 stale 값으로
+#      거짓말할 수 있음 (token 은 ProviderConsumptionOrg 인데 헤더는 Org1 로 표시되는 사례).
+# How to apply: tenant 모드 헤더 표기 시 호출. 실패해도 caller 는 계속 진행 (fallback 표기).
+_vcfa_session_org_tsv() {
+  local resp; resp=$(vcfa_api_get "https://${VCFA_FQDN}/cloudapi/1.0.0/sessions/current" 2>/dev/null) || return 1
+  echo "${resp}" | jq -r '"\(.org.name)\t\(.org.id)"' 2>/dev/null
+}
+
 # 내부: 현재 ORG 의 모든 VDC × 그 안의 namespace 를 하나의 JSON 배열로 반환.
 # 각 element 에 _vdcId / _vdcName 메타 추가.
 # ★ 사전조건: VCFA_ORG_ID 가 이미 세팅되어 있어야 함 (caller 가 _vcfa_ensure_org_id 먼저 호출).
@@ -325,7 +353,18 @@ vcfa_list_namespaces() {
     _vcfa_ensure_org_id || return 1
   fi
   local json; json=$(_vcfa_list_namespaces_json) || return 1
-  echo "ORG: ${VCFA_ORG_NAME:-${VCFA_TENANT_ORG:-?}} (${VCFA_ORG_ID:-tenant})"
+  # tenant 모드: env 의 VCFA_ORG_NAME 은 stale 일 수 있어 session 의 실제 org 를 보여줌.
+  if [[ -n "${VCFA_TENANT_ORG:-}" ]]; then
+    local sess; sess=$(_vcfa_session_org_tsv)
+    if [[ -n "${sess}" ]]; then
+      local sess_name="${sess%$'\t'*}" sess_id="${sess#*$'\t'}"
+      echo "ORG (session): ${sess_name} (${sess_id})"
+    else
+      echo "ORG (session): ${VCFA_TENANT_ORG} (session 조회 실패 — fallback)"
+    fi
+  else
+    echo "ORG: ${VCFA_ORG_NAME:-?} (${VCFA_ORG_ID:-?})"
+  fi
   local n; n=$(echo "$json" | jq 'length')
   if [[ "$n" -eq 0 ]]; then
     echo "(namespace 없음)"
@@ -369,7 +408,18 @@ vcfa_select_namespace() {
     return 1
   fi
 
-  echo "선택 가능한 Namespace (ORG: ${VCFA_ORG_NAME:-${VCFA_TENANT_ORG:-?}}):"
+  local _hdr_org
+  if [[ -n "${VCFA_TENANT_ORG:-}" ]]; then
+    local sess; sess=$(_vcfa_session_org_tsv)
+    if [[ -n "${sess}" ]]; then
+      _hdr_org="${sess%$'\t'*} [session]"
+    else
+      _hdr_org="${VCFA_TENANT_ORG} [tenant, session 조회 실패]"
+    fi
+  else
+    _hdr_org="${VCFA_ORG_NAME:-?}"
+  fi
+  echo "선택 가능한 Namespace (ORG: ${_hdr_org}):"
   if [[ -n "${VCFA_TENANT_ORG:-}" ]]; then
     echo "$json" | jq -r '
       to_entries[]
@@ -381,7 +431,7 @@ vcfa_select_namespace() {
   fi
 
   printf "번호 [1-%s]: " "$n"
-  local choice; read -r choice
+  local choice; _vcfa_read_line choice
   if ! [[ "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > n )); then
     echo "ERROR: invalid choice." >&2
     return 1
@@ -1093,7 +1143,7 @@ vcfa_select_org() {
 
   # bash 는 `read -rp PROMPT VAR` 지원, zsh 는 -p 가 coprocess 옵션이라 다름 → portable 형태
   printf "번호 [1-%s]: " "${count}"
-  read -r choice
+  _vcfa_read_line choice
   if ! [[ "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > count )); then
     echo "ERROR: invalid choice." >&2
     rm -f "$tmp"; return 1
@@ -1113,6 +1163,112 @@ vcfa_select_org() {
   echo ""
   echo "선택됨: VCFA_ORG_NAME=${name}  VCFA_ORG_ID=${id}"
   echo ".env 갱신 + 현재 셸 export 완료 (재source 불필요)"
+
+  # tenant 모드 가드: VCFA_ORG_NAME/ID 는 cloudapi (provider) 명령에만 영향.
+  # CCI 기반 명령은 token 의 실제 org 만 봄. 선택한 org ≠ session org 면 자동 전환 시도:
+  #   1) .env.tenant.<orgname> 이미 있으면 그걸로 재로그인
+  #   2) 동일 자격증명으로 시도 (provider/system 사용자 — configadmin 등)
+  #   3) 둘 다 실패 + tty → user/pass prompt → 새 env 파일에 저장 (mode 600) → 재로그인
+  # 모두 실패 시 TOKEN/USER/PASS/TENANT_ORG/ENV_FILE 전체 롤백.
+  if [[ -n "${VCFA_TENANT_ORG:-}" ]]; then
+    local _sess_name; _sess_name=$(_vcfa_session_org_tsv 2>/dev/null | cut -f1)
+    if [[ -n "${_sess_name}" && "${_sess_name}" != "${name}" ]]; then
+      echo ""
+      echo "tenant 모드: token 의 실제 org='${_sess_name}', 선택='${name}' 불일치 → org 전환 시도."
+
+      local _o_tok="${TOKEN:-}" _o_ten="${VCFA_TENANT_ORG:-}"
+      local _o_usr="${VCFA_USER:-}" _o_psw="${VCFA_PASS:-}"
+      local _o_env="${VCFA_ENV_FILE:-}"
+      local _o_fqdn="${VCFA_FQDN:-}" _o_ver="${VCFA_API_VERSION:-9.1.0}"
+      local _cand="${VCFA_ENV_FILE:-${_VCFA_LIB_DIR}/../.env.tenant}.${name}"
+      local _ok=0
+
+      # 1) per-org 파일 우선
+      if [[ -f "${_cand}" ]]; then
+        echo "  → 자격증명 파일 발견: ${_cand}"
+        source "${_cand}"
+        export VCFA_ENV_FILE="${_cand}"
+        if login_vcfa_tenant; then
+          _ok=1
+          echo "OK: '${name}' tenant session 활성 (from ${_cand})"
+        fi
+      fi
+
+      # 2) 동일 자격증명 — 성공해도 base env 파일은 절대 건드리지 않고 per-org 파일 새로 생성.
+      #    base 가 변경되면 다음 `source ... .env.tenant` 가 원래 org 로 돌아갈 수 없게 됨.
+      if (( _ok == 0 )); then
+        export VCFA_USER="${_o_usr}" VCFA_PASS="${_o_psw}"
+        export VCFA_FQDN="${_o_fqdn}" VCFA_API_VERSION="${_o_ver}"
+        export VCFA_TENANT_ORG="${name}"
+        echo "  → 동일 자격증명으로 시도 (${VCFA_USER}@${name}) ..."
+        if login_vcfa_tenant; then
+          _ok=1
+          umask 077
+          cat > "${_cand}" <<EOF
+export VCFA_FQDN="${_o_fqdn}"
+export VCFA_API_VERSION="${_o_ver}"
+export VCFA_TENANT_ORG="${name}"
+export VCFA_USER="${_o_usr}"
+export VCFA_PASS="${_o_psw}"
+EOF
+          chmod 600 "${_cand}"
+          export VCFA_ENV_FILE="${_cand}"
+          echo "OK: '${name}' tenant session 활성 (same credentials, saved to ${_cand}, mode=600)"
+          echo "    (base env '${_o_env}' 은 변경 없음 — 다음 source 시 원래 org 로 복귀)"
+        fi
+      fi
+
+      # 3) prompt → 새 env 파일
+      if (( _ok == 0 )) && [[ -t 0 ]]; then
+        echo ""
+        echo "  → 동일 자격증명 실패. '${name}' 자격증명을 직접 입력 (취소: Ctrl-C):" >&2
+        local _nu _np
+        printf "    VCFA_USER (Enter=현재 '%s' 유지): " "${_o_usr}" >&2
+        _vcfa_read_line _nu
+        [[ -z "${_nu}" ]] && _nu="${_o_usr}"
+        printf "    VCFA_PASS: " >&2
+        read -rs _np; echo "" >&2
+
+        if [[ -n "${_np}" ]]; then
+          # 새 자격증명 파일 (chmod 600 — .env.* 는 gitignore 됨)
+          umask 077
+          cat > "${_cand}" <<EOF
+export VCFA_FQDN="${_o_fqdn}"
+export VCFA_API_VERSION="${_o_ver}"
+export VCFA_TENANT_ORG="${name}"
+export VCFA_USER="${_nu}"
+export VCFA_PASS="${_np}"
+EOF
+          chmod 600 "${_cand}"
+
+          export VCFA_FQDN="${_o_fqdn}" VCFA_API_VERSION="${_o_ver}"
+          export VCFA_USER="${_nu}" VCFA_PASS="${_np}"
+          export VCFA_TENANT_ORG="${name}"
+          export VCFA_ENV_FILE="${_cand}"
+          if login_vcfa_tenant; then
+            _ok=1
+            echo "OK: '${name}' tenant session 활성 (new credentials, saved to ${_cand}, mode=600)"
+          else
+            echo "ERROR: 새 자격증명으로도 로그인 실패. ${_cand} 확인 후 'source scripts/session.sh ${_cand}' 로 재시도." >&2
+          fi
+        else
+          echo "ERROR: 비밀번호 비어있음 — 취소됨." >&2
+        fi
+      fi
+
+      # 롤백
+      if (( _ok == 0 )); then
+        TOKEN="${_o_tok}"; export TOKEN
+        if [[ -n "${_o_ten}" ]]; then export VCFA_TENANT_ORG="${_o_ten}"; else unset VCFA_TENANT_ORG; fi
+        export VCFA_USER="${_o_usr}" VCFA_PASS="${_o_psw}"
+        export VCFA_FQDN="${_o_fqdn}" VCFA_API_VERSION="${_o_ver}"
+        if [[ -n "${_o_env}" ]]; then export VCFA_ENV_FILE="${_o_env}"; fi
+        echo ""
+        echo "WARN: 이전 session ('${_o_ten}') 으로 롤백. VCFA_ORG_NAME/ID 만 갱신된 상태입니다." >&2
+        return 1
+      fi
+    fi
+  fi
 }
 
 # ============================================================
@@ -1154,7 +1310,7 @@ vcfa_select_project() {
     | "  \(.key+1 | tostring | (" "*(2-length) + .))) \(.value.name)   (\(.value.id))   \(.value.description // "")"' "${resp}"
 
   printf "번호 [1-%s]: " "$n"
-  local choice; read -r choice
+  local choice; _vcfa_read_line choice
   if ! [[ "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > n )); then
     echo "ERROR: invalid choice." >&2
     rm -f "${resp}"; return 1
