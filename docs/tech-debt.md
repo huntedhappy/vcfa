@@ -23,7 +23,7 @@
 [actions/com.vmk.dk/](../actions/com.vmk.dk/) 내 파일명에 오타가 굳어 있음. 블루프린트 input의 `$data` 경로와 일치하므로 단순 rename은 호환성 위험.
 - `getStroageClassManual.js` (Stroage ← Storage 오타)
 - `getStroageClassManualOptionals.js` (동일)
-- `getUbuntuVersion` — **확장자 누락** (`.js` 없음). 다른 액션은 모두 `.js`.
+- ~~`getUbuntuVersion` — **확장자 누락** (`.js` 없음)~~ → **해결 (2026-06-25)**: `getUbuntuVersion.js` 로 rename. vRO action 이름은 확장자 제외값(`getUbuntuVersion`)이라 동일 → blueprint `$data` 매칭 유지. 단 `vco_import_action ...getUbuntuVersion.js com.vmk.dk Array/Properties '[{"name":"os","type":"string"}]'` 로 vRO 에 import 후 release 통과 확인 필요.
 - 블루프린트 표기 혼용: `getNamespaces`(blueprint) vs 파일명 `getNameSpaces.js` — 호출 경로 케이스 민감 여부는 vRO 측 확인 필요(미확인).
 
 권장: 변경 시 vRO 내 액션 ID와 블루프린트 `$data` URL을 함께 갱신.

@@ -4,9 +4,16 @@
 ```bash
 cd /var/tmp
 git clone git@github.com:huntedhappy/vcfa.git ${PWD}/vcfa && cd vcfa
-cp .env.example .env             # provider 자격증명
-cp .env.example .env.tenant      # tenant 자격증명 + export VCFA_TENANT_ORG="ProviderConsumptionOrg"
+cp .env.example        .env          # provider(System) 모드용
+cp .env.tenant.example .env.tenant   # tenant 모드용 (복사만으로 tenant 모드 — VCFA_TENANT_ORG 이미 설정됨)
 ```
+
+> ⚠️ **두 템플릿은 로그인 모드가 다릅니다.**
+> - `.env` (← `.env.example`): provider 기본. `VCFA_USER=admin@system`, `VCFA_TENANT_ORG` 주석. → System 작업만. blueprint/form/**project-service/catalog** API 는 **403**.
+> - `.env.tenant` (← `.env.tenant.example`): tenant. `VCFA_TENANT_ORG` 설정됨 → tenant 로그인. **project 멤버 user** 토큰만 위 API 가 200.
+>
+> 복사 후 `.env.tenant` 에서 **`VCFA_USER` / `VCFA_PASS` 만** 본인 tenant 계정으로 바꾸면 됩니다.
+> (`VCFA_TENANT_ORG` 가 비어 있으면 provider 모드로 로그인되어 `project-service ... HTTP=403` 이 납니다.)
 
 ---
 
@@ -34,6 +41,13 @@ vco_import_action actions/com.vmk.dk/getNamespaces.js com.vmk.dk Array/string \
 # 디렉터리 일괄 import (모든 *.js — 기본 output-type=Any, inputs=[])
 vco_import_all_js actions/com.vmk.dk com.vmk.dk
 # ※ output-type / input 이 다른 액션은 위 vco_import_action 으로 한 번 더 호출 → 덮어쓰기
+
+# ★ blueprint 의 $data 드롭다운/계산값 소스로 쓰는 액션은 반드시 "구체 output-type" 으로 import.
+#   output-type=Any 면 Cloud Assembly 가 인덱싱 안 함 → release 가 "VRO action ... not found" (HTTP 400).
+#   아래 헬퍼가 blueprint 들을 스캔해, 각 $data 액션을 파일 헤더의 'Return type:' + blueprint 쿼리의 입력으로
+#   자동 import 함 (헤더 기반·멱등). 새 환경 bring-up 시 한 줄이면 끝.
+vco_import_data_actions                 # blueprints/ 의 모든 $data 액션을 올바른 타입/입력으로 import
+vco_check_data_actions                  # (preflight) 각 $data 액션이 vRO 에 존재 + output-type≠Any 인지 점검
 
 # vRO 패키지
 # ── 로컬 파일 검사 (offline, 서버 호출 없음) ──
@@ -78,10 +92,12 @@ form_show forms/vm/custom_vm.yml
 content_pairs
 
 # Blueprint + Form import (권장)
-content_publish_all                                                # 모든 운영 파일 일괄
+content_publish_all                                                # 모든 운영 파일 일괄 (release 전 $data 액션 preflight 자동)
 content_publish_all --include-archive                              # archive 포함
 content_publish_all --cleanup-on-fail                              # release/form 실패 시 만들어진 DRAFT 자동 삭제
+content_publish_all --skip-preflight                               # $data 액션 preflight 건너뛰기
 content_publish blueprints/vm/blueprint_vm.yaml forms/vm/custom_vm.yml   # 한 쌍만
+# ℹ️ release 가 "VRO action ... not found" (400) 면 → $data 액션이 output-type=Any. 'vco_import_data_actions' 로 고치고 재시도.
 
 # Blueprint REST (단계별)
 bp_remote_list

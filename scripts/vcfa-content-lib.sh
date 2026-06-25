@@ -72,7 +72,7 @@ bp_check() {
   require_cmd yq || return 1
   local root; root=$(_content_root)
   local dir="${root}/blueprints"
-  local f rc=0 status
+  local f rc=0 st fmt has_inputs has_resources
 
   local files=()
   if [[ -n "$1" ]]; then
@@ -89,9 +89,8 @@ bp_check() {
       issues+=("YAML syntax error")
     else
       # 2) 필수 키 — Cloud Assembly Cloud Template 의 최소 형식
-      local fmt; fmt=$(yq eval '.formatVersion' "$f" 2>/dev/null)
+      fmt=$(yq eval '.formatVersion' "$f" 2>/dev/null)
       [[ "$fmt" == "1" ]] || issues+=("formatVersion != 1 (got: ${fmt:-null})")
-      local has_inputs has_resources
       has_inputs=$(yq eval 'has("inputs")' "$f" 2>/dev/null)
       has_resources=$(yq eval 'has("resources")' "$f" 2>/dev/null)
       [[ "$has_resources" == "true" ]] || issues+=("missing .resources")
@@ -99,12 +98,12 @@ bp_check() {
     fi
 
     if [[ ${#issues[@]} -eq 0 ]]; then
-      status="OK"
+      st="OK"
     else
-      status="FAIL: $(IFS='; '; echo "${issues[*]}")"
+      st="FAIL: $(IFS='; '; echo "${issues[*]}")"
       rc=1
     fi
-    printf '%s\t%s\n' "${f#${root}/}" "$status"
+    printf '%s\t%s\n' "${f#${root}/}" "$st"
   done | column -t -s $'\t'
   return $rc
 }
@@ -116,8 +115,8 @@ bp_show() {
   echo "=== ${f} ==="
   yq eval '{
     "formatVersion": .formatVersion,
-    "inputs": (.inputs // {} | to_entries | map({key, type: .value.type, default: .value.default, "from-vRO": (.value["$data"] // null) })),
-    "resources": (.resources // {} | to_entries | map({key, type: .value.type}))
+    "inputs": (.inputs // {} | to_entries | map({"key": .key, "type": .value.type, "default": .value.default, "from-vRO": (.value["$data"] // null) })),
+    "resources": (.resources // {} | to_entries | map({"key": .key, "type": .value.type}))
   }' "$f"
 }
 
@@ -147,7 +146,7 @@ form_check() {
   require_cmd yq || return 1
   local root; root=$(_content_root)
   local dir="${root}/forms"
-  local f rc=0 status
+  local f rc=0 st has_layout pages_count
 
   local files=()
   if [[ -n "$1" ]]; then
@@ -163,7 +162,6 @@ form_check() {
       issues+=("YAML syntax error")
     else
       # Service Broker Custom Form: 최소 .layout.pages[] 존재
-      local has_layout pages_count
       has_layout=$(yq eval 'has("layout")' "$f" 2>/dev/null)
       [[ "$has_layout" == "true" ]] || issues+=("missing .layout")
       pages_count=$(yq eval '.layout.pages | length // 0' "$f" 2>/dev/null)
@@ -171,12 +169,12 @@ form_check() {
     fi
 
     if [[ ${#issues[@]} -eq 0 ]]; then
-      status="OK"
+      st="OK"
     else
-      status="FAIL: $(IFS='; '; echo "${issues[*]}")"
+      st="FAIL: $(IFS='; '; echo "${issues[*]}")"
       rc=1
     fi
-    printf '%s\t%s\n' "${f#${root}/}" "$status"
+    printf '%s\t%s\n' "${f#${root}/}" "$st"
   done | column -t -s $'\t'
   return $rc
 }
@@ -188,10 +186,10 @@ form_show() {
   echo "=== ${f} ==="
   yq eval '{
     "pages": [.layout.pages[]? | {
-      id,
+      "id": .id,
       "sections": [.sections[]? | {
-        id,
-        "fields": [.fields[]? | {id, display}]
+        "id": .id,
+        "fields": [.fields[]? | {"id": .id, "display": .display}]
       }]
     }]
   }' "$f"
@@ -223,7 +221,7 @@ pkg_check() {
   require_cmd unzip || return 1
   local root; root=$(_content_root)
   local dir="${root}/packages"
-  local f rc=0 status
+  local f rc=0 st listing n
 
   local files=()
   if [[ -n "$1" ]]; then
@@ -234,14 +232,12 @@ pkg_check() {
 
   for f in "${files[@]}"; do
     local issues=()
-    local listing
     if ! listing=$(unzip -l "$f" 2>&1); then
       issues+=("not a valid ZIP")
     else
       # dunes-meta-inf 존재
       echo "$listing" | grep -q "dunes-meta-inf$" || issues+=("missing dunes-meta-inf")
       # 최소 element 1개
-      local n
       n=$(echo "$listing" | awk '$NF ~ /^elements\// && $NF ~ /\/data$/ {n++} END{print n+0}')
       (( n > 0 )) || issues+=("no elements")
       # 서명 디렉터리
@@ -251,12 +247,12 @@ pkg_check() {
     fi
 
     if [[ ${#issues[@]} -eq 0 ]]; then
-      status="OK"
+      st="OK"
     else
-      status="FAIL: $(IFS='; '; echo "${issues[*]}")"
+      st="FAIL: $(IFS='; '; echo "${issues[*]}")"
       rc=1
     fi
-    printf '%s\t%s\n' "${f#${root}/}" "$status"
+    printf '%s\t%s\n' "${f#${root}/}" "$st"
   done | column -t -s $'\t'
   return $rc
 }
@@ -321,7 +317,7 @@ content_pairs() {
   printf '%s\n' "BLUEPRINT	FORM	MATCHED_KEY"
 
   local bp_dir="${root}/blueprints" form_dir="${root}/forms"
-  local f rel key form_rel matched
+  local f rel key form_rel matched fkey
   while IFS= read -r f; do
     rel="${f#${root}/}"
     # archive/ 는 표시만 하고 매칭 시도 안함
@@ -334,7 +330,6 @@ content_pairs() {
     # forms/ 안에 동일 키 매칭
     matched=""
     while IFS= read -r form_rel; do
-      local fkey
       fkey=$(basename "$form_rel" | sed -E 's/\.(yaml|yml)$//; :a; s/^(blueprint_|custom_|vra_|vcfa_)//; ta')
       if [[ "$fkey" == "$key" ]]; then
         matched="${form_rel#${root}/}"
@@ -409,37 +404,64 @@ bp_remote_import() {
 
   local name="${2:-$(basename "$f" | sed -E 's/\.(yaml|yml)$//; s/^blueprint_//')}"
 
+  # 같은 이름의 blueprint 가 이미 있으면 새로 만들지 않고 update.
+  # blueprint name 은 unique 가 아니라서, 무조건 POST 하면 실행할 때마다 동일 이름이 중복 생성됨.
+  # → 목록 조회 후 같은 이름이 있으면 그 id 로 PUT(update). 같은 project 우선, 여러 개면 최신 것.
+  local existing; existing=$(mktemp /tmp/bp-find.XXXXXX)
+  local existing_id="" n_match=0
+  if vcfa_api_get "https://${VCFA_FQDN}/blueprint/api/blueprints?page=0&size=200" > "${existing}" 2>/dev/null; then
+    n_match=$(jq --arg name "$name" '[.content[]? | select(.name == $name)] | length' "${existing}")
+    existing_id=$(jq -r --arg name "$name" --arg pid "$pid" '
+      [.content[]? | select(.name == $name)] as $byname
+      | (($byname | map(select(.projectId == $pid))) | if length > 0 then . else $byname end)
+      | sort_by(.updatedAt // .createdAt // "") | last | .id // ""
+    ' "${existing}")
+  fi
+  rm -f "${existing}"
+  if [[ "${n_match:-0}" -gt 1 ]]; then
+    echo "WARN: 이름 '${name}' blueprint 가 ${n_match} 개 존재 → 가장 최근(${existing_id}) 갱신. 나머지 중복은 'bp_remote_delete <id>' 로 정리하세요." >&2
+  fi
+
   # YAML → JSON-safe 문자열
   local content_str; content_str=$(jq -Rs '.' < "$f")
   local body; body=$(mktemp /tmp/bp-import.XXXXXX)
   jq -n --arg name "$name" --arg pid "$pid" --argjson content "$content_str" \
     '{name:$name, projectId:$pid, content:$content}' > "$body"
 
+  # 있으면 PUT(update, 200), 없으면 POST(create, 201)
+  local method url okcode action
+  if [[ -n "$existing_id" ]]; then
+    method=PUT;  url="https://${VCFA_FQDN}/blueprint/api/blueprints/${existing_id}"; okcode=200; action=updated
+  else
+    method=POST; url="https://${VCFA_FQDN}/blueprint/api/blueprints";                okcode=201; action=created
+  fi
+
   local resp; resp=$(mktemp /tmp/bp-import-resp.XXXXXX)
   local code
-  code=$(curl -sk -X POST \
+  code=$(curl -sk -X "${method}" \
     -H "Authorization: Bearer ${TOKEN}" \
     -H "Content-Type: application/json" \
     -H "Accept: application/json" \
     -d @"${body}" \
     -o "${resp}" -w "%{http_code}" \
-    "https://${VCFA_FQDN}/blueprint/api/blueprints")
+    "${url}")
   rm -f "${body}"
 
-  if [[ "${code}" != "201" ]]; then
-    echo "ERROR: blueprint import HTTP=${code}" >&2
+  if [[ "${code}" != "${okcode}" ]]; then
+    echo "ERROR: blueprint ${action} HTTP=${code} (${method})" >&2
     jq . "${resp}" 2>/dev/null >&2 || cat "${resp}" >&2
     rm -f "${resp}"; return 1
   fi
 
-  local id; id=$(jq -r '.id' "${resp}")
-  local valid; valid=$(jq -r '.valid' "${resp}")
+  local id; id=$(jq -r '.id // empty' "${resp}")
+  [[ -z "$id" ]] && id="$existing_id"
+  local valid; valid=$(jq -r '.valid // "?"' "${resp}")
   rm -f "${resp}"
 
   # 다음 단계가 사용할 수 있도록 셸 환경에 export — 손으로 id 복사 안 해도 됨.
   export VCFA_BP_ID="$id"
   export VCFA_BP_NAME="$name"
-  echo "OK: blueprint imported"
+  echo "OK: blueprint ${action}"
   echo "    name = ${name}"
   echo "    id   = ${id}    (셸에 VCFA_BP_ID 로 export 됨)"
   echo "    valid=${valid}, status=DRAFT"
@@ -480,12 +502,12 @@ bp_remote_release() {
     rm -f "${resp}"; return 1
   fi
 
-  local status; status=$(jq -r '.status' "${resp}")
+  local st; st=$(jq -r '.status' "${resp}")
   rm -f "${resp}"
   echo "OK: released"
   echo "    bp     = ${id}"
   echo "    version= ${version}"
-  echo "    status = ${status}"
+  echo "    status = ${st}"
 
   # catalog item id 자동 추출 → 다음 단계 (form_remote_import) 가 사용
   echo "    (catalog 반영 대기...)"
@@ -819,17 +841,28 @@ content_publish_all() {
   # 기본: blueprints/ 의 archive/ 제외 모든 *.yaml/*.yml 을 import → release → 짝 form 적용.
   # 짝 form 은 content_pairs 와 동일한 키 매칭 규칙 사용.
   # --cleanup-on-fail: release/form 실패 시 그 단계에서 만들어진 DRAFT blueprint 자동 삭제 (서버 잔여물 방지).
-  local include_archive=0 cleanup_on_fail=0
+  local include_archive=0 cleanup_on_fail=0 skip_preflight=0
   for arg in "$@"; do
     case "$arg" in
       --include-archive)  include_archive=1 ;;
       --cleanup-on-fail)  cleanup_on_fail=1 ;;
+      --skip-preflight)   skip_preflight=1 ;;
     esac
   done
 
   _remote_guard || return 1
   local root; root=$(_content_root)
   local bp_dir="${root}/blueprints" form_dir="${root}/forms"
+
+  # release 전 preflight — $data vRO 액션이 vRO 에 존재 + output-type 이 Any 가 아닌지 검사.
+  if [[ "$skip_preflight" -eq 0 ]] && typeset -f vco_check_data_actions >/dev/null 2>&1; then
+    echo "=== preflight: \$data vRO 액션 점검 ==="
+    if ! vco_check_data_actions "$bp_dir"; then
+      echo "ERROR: preflight 실패 — 'vco_import_data_actions' 로 고친 뒤 재실행 (무시: --skip-preflight)." >&2
+      return 1
+    fi
+    echo ""
+  fi
 
   # archive 제외 (기본)
   local find_args=("-type" "f" "(" "-name" "*.yaml" "-o" "-name" "*.yml" ")")

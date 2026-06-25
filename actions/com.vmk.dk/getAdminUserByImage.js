@@ -1,3 +1,5 @@
+// Input: imageName (string)
+// Return type: string
 var v = String(imageName || "").toLowerCase();
 System.log("imageName=" + imageName);
 System.log("normalized=" + v);

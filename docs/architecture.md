@@ -45,7 +45,7 @@
 │       ├── getContentsLibrary.js
 │       ├── getKRVersion.js
 │       ├── getOS.js
-│       ├── getUbuntuVersion                # 확장자 없음
+│       ├── getUbuntuVersion.js
 │       ├── ChangePasswordHash.js           # 실체 Python (crypt SHA-512)
 │       ├── validatePasswordMatch.js
 │       ├── doubleBase64.js

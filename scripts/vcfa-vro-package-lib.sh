@@ -458,3 +458,98 @@ vco_list_packages() {
 
   rm -f "${response_file}"
 }
+
+# ============================================================
+# $data vRO 액션 = blueprint 입력 드롭다운/계산값 소스.
+# Cloud Assembly 는 output-type 이 'Any' 인 액션을 $data 로 인덱싱하지 않음
+#   → release 검증이 "VRO action <module>/<name> not found" (HTTP 400).
+# 정답: 구체 output-type 으로 import.
+#   - output-type : 액션 파일 헤더의 'Return type: ...' (한글 '반환값(Return type): ...' 도 인식)
+#   - inputs      : blueprint 의 $data 쿼리스트링 파라미터 (모두 string)
+# ============================================================
+
+# blueprint 들이 참조하는 모든 $data vRO 액션을 올바른 타입/입력으로 import (헤더 기반, 멱등).
+# Usage: vco_import_data_actions [BLUEPRINT_DIR] [ACTION_ROOT]
+vco_import_data_actions() {
+  require_cmd jq || return 1
+  local root; root=$(_content_root 2>/dev/null) || root="$(pwd)"
+  local bp_dir="${1:-${root}/blueprints}"
+  local act_root="${2:-${root}/actions}"
+  [[ -d "$bp_dir" ]] || { echo "ERROR: blueprint dir 없음: $bp_dir" >&2; return 1; }
+
+  local refs fqns rc=0 out
+  out=$(mktemp /tmp/vda.XXXXXX)
+  refs=$(grep -rhoE 'vro-actions/[A-Za-z0-9_.]+/[A-Za-z0-9_]+(\?[^"'"'"' ]*)?' "$bp_dir" \
+         | sed -E 's#.*vro-actions/##' | sort -u)
+  if [[ -z "$refs" ]]; then echo "ERROR: \$data vRO 액션 참조를 못 찾음: $bp_dir" >&2; rm -f "$out"; return 1; fi
+  fqns=$(printf '%s\n' "$refs" | sed -E 's/\?.*//' | sort -u)
+
+  local fqn module name file rtype params inputs_json res
+  printf 'ACTION\tRETURN-TYPE\tINPUTS\tRESULT\n' >> "$out"
+  while IFS= read -r fqn; do
+    [[ -z "$fqn" ]] && continue
+    module="${fqn%/*}"; name="${fqn##*/}"
+    file="${act_root}/${module}/${name}.js"
+    params=$(printf '%s\n' "$refs" | grep -E "^${module}/${name}(\?|\$)" \
+             | sed -E "s#^${module}/${name}##; s/^\?//" | tr '&' '\n' | sed -E 's/=.*//' \
+             | grep -v '^$' | sort -u | paste -sd, -)
+    if [[ ! -f "$file" ]]; then
+      printf '%s\t%s\t%s\t%s\n' "$fqn" "-" "${params:--}" "SKIP(파일없음)" >> "$out"; rc=1; continue
+    fi
+    rtype=$(grep -ioE 'Return[[:space:]]*type\)?[[:space:]]*:[[:space:]]*[A-Za-z]+(/[A-Za-z]+)?' "$file" \
+            | head -1 | sed -E 's#.*:[[:space:]]*##')
+    if [[ -z "$rtype" ]]; then
+      printf '%s\t%s\t%s\t%s\n' "$fqn" "<none>" "${params:--}" "SKIP(헤더 Return type 없음)" >> "$out"; rc=1; continue
+    fi
+    if [[ -z "$params" ]]; then
+      inputs_json='[]'
+    else
+      inputs_json=$(printf '%s' "$params" | tr ',' '\n' \
+        | jq -R 'select(length>0)|{name:.,type:"string",description:""}' | jq -sc '.')
+    fi
+    if vco_import_action "$file" "$module" "$rtype" "$inputs_json" >/dev/null 2>&1; then
+      res="OK"
+    else
+      res="FAIL(import)"; rc=1
+    fi
+    printf '%s\t%s\t%s\t%s\n' "$fqn" "$rtype" "${params:--}" "$res" >> "$out"
+  done <<< "$fqns"
+
+  column -t -s $'\t' "$out"; rm -f "$out"
+  if [[ $rc -eq 0 ]]; then echo "→ \$data 액션 import 완료 (전부 OK)."
+  else echo "→ 일부 실패/스킵 — RESULT 확인 (헤더없음은 액션파일에 '// Return type: ...' 추가)." >&2; fi
+  return $rc
+}
+
+# release 전 preflight: 각 $data 액션이 vRO 에 존재 + output-type 이 Any 가 아닌지 검사.
+# Usage: vco_check_data_actions [BLUEPRINT_DIR]   (rc=0 통과, rc=1 문제 발견)
+vco_check_data_actions() {
+  require_cmd jq || return 1
+  : "${TOKEN:?ERROR: TOKEN 없음 — source scripts/session.sh .env.tenant 먼저}"
+  local root; root=$(_content_root 2>/dev/null) || root="$(pwd)"
+  local bp_dir="${1:-${root}/blueprints}"
+  local base; base=$(_vco_base) || return 1
+
+  local fqns out rc=0
+  out=$(mktemp /tmp/vck.XXXXXX)
+  fqns=$(grep -rhoE 'vro-actions/[A-Za-z0-9_.]+/[A-Za-z0-9_]+' "$bp_dir" | sed -E 's#.*vro-actions/##' | sort -u)
+  if [[ -z "$fqns" ]]; then rm -f "$out"; return 0; fi
+
+  local fqn ot verdict
+  printf 'ACTION\tOUTPUT-TYPE\tVERDICT\n' >> "$out"
+  while IFS= read -r fqn; do
+    [[ -z "$fqn" ]] && continue
+    ot=$(curl -sk -H "Authorization: Bearer ${TOKEN}" -H "Accept: application/json" \
+         "${base}/actions/${fqn}/" 2>/dev/null | jq -r '."output-type" // "MISSING"')
+    if [[ "$ot" == "MISSING" || -z "$ot" ]]; then verdict="✗ vRO에 없음"; rc=1
+    elif [[ "$ot" == "Any" ]]; then verdict="✗ Any → Array/* 로 재import 필요"; rc=1
+    else verdict="OK"; fi
+    printf '%s\t%s\t%s\n' "$fqn" "$ot" "$verdict" >> "$out"
+  done <<< "$fqns"
+
+  column -t -s $'\t' "$out"; rm -f "$out"
+  if [[ $rc -ne 0 ]]; then
+    echo "→ 위 ✗ 때문에 release 가 'VRO action ... not found' (400) 날 수 있음. 'vco_import_data_actions' 로 고치세요." >&2
+  fi
+  return $rc
+}
