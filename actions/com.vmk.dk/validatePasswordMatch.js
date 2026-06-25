@@ -1,3 +1,5 @@
+# Return type: string
+# Inputs: pw1 (string), pw2 (string)
 def handler(context, inputs):
     print("=== 비밀번호 일치 검증 Action 시작 ===")
     

@@ -12,7 +12,7 @@ function toStorageClassValue(name) {
 }
 
 // 1. [수정 및 추가된 부분] 하드코딩된 배열을 삭제하고 vCenter의 스토리지 정책을 동적으로 조회합니다.
-var vcenters = VcPlugin.allSdkConnections;
+var vcenters = VcPlugin.allSdkConnections || [];
 
 for (var i = 0; i < vcenters.length; i++) {
     var vc = vcenters[i];

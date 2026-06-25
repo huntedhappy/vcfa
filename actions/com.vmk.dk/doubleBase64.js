@@ -1,3 +1,5 @@
+# Return type: string
+# Inputs: TrustCA (string)
 import base64
 import hashlib
 

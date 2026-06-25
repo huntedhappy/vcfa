@@ -312,3 +312,27 @@
 - [reference_vcfa_cci_api.md] — CCI = tenant 모드에서 작동 (자동화 가능)
 - [README.md] — 사용법 요약
 - [docs/api-reference-guide.md] — 검증된 endpoint 모음
+
+---
+
+## 2026-06-25 — VCF 9.x: $data 액션 동작불능 진단·해결 + 폼 실증 (라이브 검증)
+
+- **상태**: DONE (vCenter/vAPI 등록은 보류 — 자격증명 필요)
+- **배경**: 폼 드롭다운 대부분이 동작 안 함. getProjectsNames RUN → "No VCFA:Host objects found".
+- **근본 원인 (라이브 vcfa.dtvcf.lab 진단)**:
+  1. `com.vmk.dk` `$data` 액션은 VCF 9.x All-Apps 모델(`VCFA:Host`/`cciService`)로 올바르게 작성돼 있었으나 **Orchestrator 인벤토리에 VCFA:Host 미등록** → throw. (코드 문제 아님)
+  2. import 헬퍼가 `runtime` 미설정 → **Python 액션 3개(ChangePasswordHash·doubleBase64·validatePasswordMatch)가 JS로 import되어 깨짐.**
+- **한 일**:
+  - `vco_import_action`: `.js` 안 `def handler` 자동 감지 → `runtime=${VCO_PY_RUNTIME:-python:3.10}` (검증: 3개 모두 `runtime:python:3.10`).
+  - 신규 헬퍼: `vco_run_workflow`(워크플로 실행+폴링), `vcfa_register_host`(VCFA:Host 등록, .env 자동), `vco_run_action`(vRO 액션 직접 실행 REST `POST /vco/api/actions/<m>/<n>/executions`).
+  - **VCFA:Host 등록** — `Add a VCF Automation Host` 워크플로. 결정타: **`connectionType="Per User Session"`** (Shared Session 은 `fetchAll Project` 실패), `k8sApiVersion=v1alpha2`. → 검증된 기본값으로 헬퍼에 박음.
+  - 코드 버그: getKRVersion 중복(v1.34.1) 제거, getStorageClass `|| []` 가드, getProjectsNames/getNamespaces actionable 에러문구.
+- **수정한 파일**: `scripts/vcfa-vro-package-lib.sh`, `actions/com.vmk.dk/{getProjectsNames,getNamespaces,getKRVersion,getStorageClass,ChangePasswordHash,doubleBase64,validatePasswordMatch}.js`
+- **검증 (라이브, vco_run_action 으로 실제 실행)**:
+  - getProjectsNames=`["vcfa2","default-project","vcfa1"]`, getNamespaces(default-project)=`["hh-ns-zqbhb","vcfa-7f4cv"]`, Python·하드코딩·storage 액션 OK.
+  - **vm 폼 바인딩 확인**(form id 9f131743, status ON) + 드롭다운 11개 중 **10개 데이터 반환**. getVMImage 만 ✗(vAPI endpoint 미등록), getStorageClass 는 k8s만(vCenter 미등록).
+  - com.vmk(5)·com.vmk.dk(17) 둘 다 등록 확인. com.vmk 로컬==서버.
+- **남은 것 (자격증명 필요)**:
+  - getVMImage → `Add vAPI endpoint`(`9fa581be-…`), getStorageClass 확장 → `Add a vCenter Server instance`(`f246b7b5-…`).
+  - **`com.vmk.tool`·`com.vmk.driver` 모듈이 서버·리포 모두 부재** → NsxtManager/VcsaManager/VraManager 런타임 실패(배포-시점 헬퍼). VraManager 는 9.x All-Apps 비호환(별도 재작성 필요).
+- **중복 방지 메모**: 액션 import 는 `vco_import_data_actions`(JS $data) + `vco_run_action`(검증). com.vmk 은 **재import 금지**(input-parameters 보존 — 이미 서버==리포). 호스트 등록은 `vcfa_register_host`.

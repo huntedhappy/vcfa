@@ -171,7 +171,8 @@ vco_import_package() {
 # - vco_get_action_id MODULE NAME           : 있으면 UUID, 없으면 빈 문자열
 # - vco_import_action FILE MODULE [OUT [IN]]: 신규 POST / 기존 PUT 자동
 # - vco_import_all_js DIR MODULE            : 디렉터리의 모든 *.js 를 기본값(out=Any, inputs=[])으로 import
-# ※ Python 액션의 runtime 필드는 미검증 — 일단 JS 만 안전.
+# ※ Python 액션(.js 안에 'def handler') 은 자동 감지 → runtime=${VCO_PY_RUNTIME:-python:3.10} 로 import.
+#   런타임 문자열이 환경과 다르면 import 가 4xx → VCO_PY_RUNTIME 로 덮어쓰기 (확인 필요).
 # ※ output-type / input-parameters 가 명시 필요한 액션은 vco_import_action 으로 인자 명시.
 # ============================================================
 
@@ -219,13 +220,23 @@ vco_import_action() {
   #   vco_import_action actions/com.vmk.dk/getProjectsNames.js com.vmk.dk Array/string '[]'
   #   vco_import_action actions/com.vmk.dk/getNamespaces.js com.vmk.dk Array/string \
   #     '[{"name":"ProjectName","type":"string","description":""}]'
-  local file="${1:?Usage: vco_import_action FILE MODULE [OUTPUT_TYPE] [INPUT_PARAMS_JSON]}"
+  #   # Python 액션은 runtime 자동 감지 (def handler) — 5번째 인자로 덮어쓰기 가능:
+  #   vco_import_action actions/com.vmk.dk/ChangePasswordHash.js com.vmk.dk string \
+  #     '[{"name":"passwd","type":"string","description":""}]' python:3.10
+  local file="${1:?Usage: vco_import_action FILE MODULE [OUTPUT_TYPE] [INPUT_PARAMS_JSON] [RUNTIME]}"
   local module="${2:?module required (e.g., com.vmk.dk)}"
   local out_type="${3:-Any}"
   local inputs="${4:-[]}"
+  local runtime="${5:-}"
 
   [[ -f "$file" ]] || { echo "ERROR: file not found: $file" >&2; return 1; }
   local base; base=$(_vco_base) || return 1
+
+  # Python 액션 자동 감지 (.js 확장자라도 'def handler(' 이면 polyglot python).
+  # 명시 runtime 이 없을 때만 적용. JS 는 runtime 미설정(서버 기본 JavaScript) 유지.
+  if [[ -z "$runtime" ]] && grep -q 'def handler' "$file"; then
+    runtime="${VCO_PY_RUNTIME:-python:3.10}"
+  fi
 
   local fname; fname="$(basename "$file")"
   local name; name="${fname%.*}"            # 확장자 제거 (.js / .py)
@@ -237,6 +248,7 @@ vco_import_action() {
     --arg module  "$module" \
     --arg version "1.0.0" \
     --arg outType "$out_type" \
+    --arg runtime "$runtime" \
     --rawfile script "$file" \
     --argjson inputs "$inputs" \
     '{
@@ -246,7 +258,7 @@ vco_import_action() {
        "output-type": $outType,
        "input-parameters": $inputs,
        script: $script
-     }' > "$body"
+     } + (if $runtime == "" then {} else {runtime: $runtime} end)' > "$body"
 
   # 신규 vs 업데이트 분기
   local existing_id method url
@@ -457,6 +469,133 @@ vco_list_packages() {
   ' "${response_file}" | column -t -s $'\t'
 
   rm -f "${response_file}"
+}
+
+# ============================================================
+# vRO 워크플로 실행 헬퍼 — REST 로 워크플로를 돌리고 완료까지 폴링.
+# 인벤토리 호스트 등록("Add a VCF Automation Host" 등) 같은 라이브러리 워크플로 자동화에 사용.
+# ============================================================
+
+# Usage: vco_run_workflow WORKFLOW_ID PARAMS_JSON_ARRAY [TIMEOUT_SEC]
+#   PARAMS_JSON_ARRAY : vRO execution 'parameters' 배열(JSON 문자열).
+#     예) '[{"name":"x","type":"string","value":{"string":{"value":"v"}}}]'
+# 종료 state 와 output / 에러를 출력. rc=0(completed) / rc=1(실패·타임아웃).
+vco_run_workflow() {
+  local wfid="${1:?Usage: vco_run_workflow WORKFLOW_ID PARAMS_JSON [TIMEOUT_SEC]}"
+  local params="${2:-[]}"
+  local timeout="${3:-180}"
+  local base; base=$(_vco_base) || return 1
+
+  local body resp hdr code
+  body=$(mktemp /tmp/wf-body.XXXXXX); resp=$(mktemp /tmp/wf-resp.XXXXXX); hdr=$(mktemp /tmp/wf-hdr.XXXXXX)
+  jq -n --argjson p "$params" '{parameters:$p}' > "$body" 2>/dev/null \
+    || { echo "ERROR: PARAMS_JSON 파싱 실패" >&2; rm -f "$body" "$resp" "$hdr"; return 1; }
+
+  code=$(curl -sk -X POST \
+    -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" -H "Accept: application/json" \
+    -d @"$body" -D "$hdr" -o "$resp" -w '%{http_code}' \
+    "${base}/workflows/${wfid}/executions")
+  rm -f "$body"
+
+  if [[ "$code" != "202" && "$code" != "200" ]]; then
+    echo "ERROR: 실행 시작 실패 HTTP=$code" >&2
+    jq . "$resp" 2>/dev/null >&2 || cat "$resp" >&2
+    rm -f "$resp" "$hdr"; return 1
+  fi
+
+  # 실행 id: Location 헤더 우선, 없으면 응답 .id
+  local exurl exid
+  exurl=$(awk -F': ' 'tolower($1)=="location"{gsub(/\r/,"",$2);print $2; exit}' "$hdr")
+  exid="${exurl##*/executions/}"; exid="${exid%/}"
+  [[ -z "$exid" ]] && exid=$(jq -r '.id // empty' "$resp")
+  rm -f "$hdr" "$resp"
+  if [[ -z "$exid" ]]; then echo "ERROR: 실행 id 추출 실패" >&2; return 1; fi
+  echo "  실행 시작: execution=${exid}"
+
+  # 폴링
+  local waited=0 state
+  while (( waited < timeout )); do
+    state=$(curl -sk -H "Authorization: Bearer ${TOKEN}" -H "Accept: application/json" \
+      "${base}/workflows/${wfid}/executions/${exid}/" -o /tmp/wf-st.json -w '' ; jq -r '.state // "?"' /tmp/wf-st.json)
+    case "$state" in
+      completed)
+        echo "  state=completed ✓"
+        jq -r '."output-parameters"[]? | "    out: \(.name) = \(.value)"' /tmp/wf-st.json 2>/dev/null
+        rm -f /tmp/wf-st.json; return 0 ;;
+      failed|canceled)
+        echo "  state=${state} ✗" >&2
+        jq -r '(."content-exception" // ."business-state" // .exception // "(에러 본문 없음)")' /tmp/wf-st.json >&2 2>/dev/null
+        rm -f /tmp/wf-st.json; return 1 ;;
+      *) sleep 3; waited=$((waited+3)) ;;
+    esac
+  done
+  echo "  TIMEOUT (${timeout}s) — 마지막 state=${state}. 실행 id=${exid}" >&2
+  rm -f /tmp/wf-st.json; return 1
+}
+
+# Usage: vcfa_register_host [NAME] [CONNECTION_TYPE] [K8S_API_VERSION]
+#   .env/세션에서 vcfaHost(VCFA_FQDN) · tenant(VCFA_TENANT_ORG) · apiToken(TOKEN) 자동 채움.
+#   CONNECTION_TYPE / K8S_API_VERSION : .env 에 없으면 인자로(또는 VCFA_CONNECTION_TYPE / VCFA_K8S_API_VERSION env).
+vcfa_register_host() {
+  : "${VCFA_FQDN:?ERROR: VCFA_FQDN 없음 — source scripts/session.sh .env.tenant 먼저}"
+  : "${TOKEN:?ERROR: TOKEN 없음 — 로그인 먼저}"
+  local name="${1:-vcfa-auto}"
+  # 검증된 기본값 (2026-06-25, vcfa.dtvcf.lab): "Per User Session" 라야 projects/namespaces 가
+  # enumerate 됨. "Shared Session" 은 fetchAll Project 실패. k8sApiVersion=v1alpha2.
+  local ctype="${2:-${VCFA_CONNECTION_TYPE:-Per User Session}}"
+  local k8sver="${3:-${VCFA_K8S_API_VERSION:-v1alpha2}}"
+  local tenant="${VCFA_TENANT_ORG:-}"
+
+  echo "호스트 등록 시도: name=${name} host=${VCFA_FQDN} tenant=${tenant} connectionType='${ctype}' k8sApiVersion='${k8sver}'"
+  local params
+  params=$(jq -n \
+    --arg host "$VCFA_FQDN" --arg tenant "$tenant" --arg name "$name" \
+    --arg ctype "$ctype" --arg k8s "$k8sver" --arg tok "$TOKEN" '
+    [ {name:"name",              type:"string",       value:{string:{value:$name}}},
+      {name:"vcfaHost",          type:"string",       value:{string:{value:$host}}},
+      {name:"tenant",            type:"string",       value:{string:{value:$tenant}}},
+      {name:"connectionType",    type:"string",       value:{string:{value:$ctype}}},
+      {name:"k8sApiVersion",     type:"string",       value:{string:{value:$k8s}}},
+      {name:"acceptCertificate", type:"boolean",      value:{boolean:{value:true}}},
+      {name:"apiToken",          type:"SecureString", value:{"secure-string":{value:$tok}}} ]')
+  vco_run_workflow "18425ea8-e7b4-4b64-9e2a-69f0a9081115" "$params"
+}
+
+# Usage: vco_run_action MODULE/NAME [PARAMS_JSON | name=value ...]
+#   파라미터 없으면 입력 없음. 'name=value' 인자들은 string 입력으로 자동 변환.
+#   타입 섞을 땐 완전한 vRO parameters 배열 JSON 을 첫 인자로.
+#   stdout = 결과 .value(JSON). 액션 throw 시 rc=1 + stderr "ERROR(line N): ...".
+# vRO 액션 직접 실행 REST: POST /vco/api/actions/<module>/<name>/executions
+#   예) vco_run_action com.vmk.dk/getProjectsNames
+#       vco_run_action com.vmk.dk/getNamespaces ProjectName=default-project
+vco_run_action() {
+  local fqn="${1:?Usage: vco_run_action MODULE/NAME [PARAMS_JSON | name=value ...]}"; shift
+  local base; base=$(_vco_base) || return 1
+  local params
+  if [[ "${1:-}" == \[* ]]; then
+    params="$1"
+  elif [[ $# -gt 0 ]]; then
+    params=$(printf '%s\n' "$@" | jq -R 'select(length>0)|split("=")|{name:.[0],type:"string",value:{string:{value:(.[1:]|join("="))}}}' | jq -sc '.')
+  else
+    params='[]'
+  fi
+  local body resp code
+  body=$(mktemp /tmp/vco-act-run.XXXXXX); resp=$(mktemp /tmp/vco-act-res.XXXXXX)
+  jq -n --argjson p "$params" '{parameters:$p}' > "$body" 2>/dev/null \
+    || { echo "ERROR: 파라미터 JSON 생성 실패" >&2; rm -f "$body" "$resp"; return 1; }
+  code=$(curl -sk -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+    -H "Accept: application/json" -d @"$body" -o "$resp" -w '%{http_code}' \
+    "${base}/actions/${fqn}/executions")
+  rm -f "$body"
+  if [[ "$code" != "200" ]]; then
+    echo "ERROR: 실행 HTTP=$code" >&2; jq . "$resp" 2>/dev/null >&2 || cat "$resp" >&2
+    rm -f "$resp"; return 1
+  fi
+  if jq -e 'has("error") and .error!=null' "$resp" >/dev/null 2>&1; then
+    echo "ERROR(line $(jq -r '.errorLineNumber // "?"' "$resp")): $(jq -r '.error' "$resp")" >&2
+    rm -f "$resp"; return 1
+  fi
+  jq -c '.value' "$resp"; rm -f "$resp"
 }
 
 # ============================================================

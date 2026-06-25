@@ -4,7 +4,7 @@
 var hostTypeName = "VCFA:Host";
 var hosts = Server.findAllForType(hostTypeName, null);
 if (!hosts || hosts.length === 0) {
-    throw "No VCFA:Host objects found.";
+    throw "No VCFA:Host in Orchestrator inventory. Run the 'Add a VCF Automation All Apps host' workflow (VCFA plug-in) first.";
 }
 var host = hosts[0];
 

@@ -6,8 +6,7 @@ var KR_VERSION = [
   { label: "v1.33.3", value: "v1.33.3---vmware.1-fips-vkr.1" },
   { label: "v1.33.6", value: "v1.33.6---vmware.1-fips-vkr.2" },
   { label: "v1.34.1", value: "v1.34.1---vmware.1-vkr.4" },
-  { label: "v1.34.2", value: "v1.34.2---vmware.2-vkr.2" },
-  { label: "v1.34.1", value: "v1.34.1---vmware.1-vkr.4" }
+  { label: "v1.34.2", value: "v1.34.2---vmware.2-vkr.2" }
 ];
 
 var results = [];

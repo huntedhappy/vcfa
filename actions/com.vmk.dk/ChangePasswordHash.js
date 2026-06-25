@@ -1,3 +1,5 @@
+# Return type: string
+# Inputs: passwd (string)
 import crypt
 import time
 
