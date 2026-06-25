@@ -4,13 +4,21 @@
 var hostTypeName = "VCFA:Host";
 var hosts = Server.findAllForType(hostTypeName, null);
 if (!hosts || hosts.length === 0) {
-    throw "No VCFA:Host in Orchestrator inventory. Run the 'Add a VCF Automation All Apps host' workflow (VCFA plug-in) first.";
+    // $data 액션은 throw 하면 폼이 깨짐 → 빈 목록 반환. 호스트는 'Add a VCF Automation Host' 워크플로로 등록.
+    System.warn("No VCFA:Host in Orchestrator inventory — 빈 목록 반환.");
+    return [];
 }
 var host = hosts[0];
 
-// VCFA Project 전체 조회
+// VCFA Project 전체 조회 — 세션/연결 실패해도 폼이 안 깨지게 빈 목록 반환
 var projectTypeName = "VCFA:Project";
-var projects = Server.findAllForType(projectTypeName, null);
+var projects;
+try {
+    projects = Server.findAllForType(projectTypeName, null);
+} catch (e) {
+    System.warn(">>> VCFA:Project fetchAll 실패 — 빈 목록 반환: " + e);
+    return [];
+}
 
 if (!projects || projects.length === 0) {
     System.log(">>> VCFA:Project objects not found.");

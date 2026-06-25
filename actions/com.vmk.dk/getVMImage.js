@@ -4,12 +4,14 @@
 var results = [];
 
 if (!targetLibraryName || String(targetLibraryName).trim() == "") {
-    throw "targetLibraryName 값이 비어 있습니다.";
+    System.warn("[getVMImage] targetLibraryName 비어있음 — 빈 목록 반환");
+    return [];
 }
 
 var endpoints = VAPIManager.getAllEndpoints();
 if (endpoints == null || endpoints.length === 0) {
-    throw "vRO에 등록된 VAPI Endpoint를 찾을 수 없습니다.";
+    System.warn("[getVMImage] 등록된 VAPI Endpoint 없음 — 빈 목록 반환");
+    return [];
 }
 
 var vapiEndpoint = endpoints[0];
@@ -60,7 +62,8 @@ try {
     }
 
     if (!foundLibrary) {
-        throw "대상 Content Library를 찾지 못했습니다. targetLibraryName=" + targetLibraryName;
+        System.warn("[getVMImage] 대상 Content Library 못 찾음 (targetLibraryName=" + targetLibraryName + ") — 빈 목록 반환");
+        return results;
     }
 
     System.log("[getVMImage] results.length=" + results.length);
@@ -72,6 +75,6 @@ try {
     return results;
 
 } catch (e) {
-    System.error("[getVMImage] 오류 발생: " + e);
-    throw e;
+    System.error("[getVMImage] 오류 발생 — 빈 목록 반환: " + e);
+    return results;
 }
