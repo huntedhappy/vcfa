@@ -336,3 +336,19 @@
   - getVMImage → `Add vAPI endpoint`(`9fa581be-…`), getStorageClass 확장 → `Add a vCenter Server instance`(`f246b7b5-…`).
   - **`com.vmk.tool`·`com.vmk.driver` 모듈이 서버·리포 모두 부재** → NsxtManager/VcsaManager/VraManager 런타임 실패(배포-시점 헬퍼). VraManager 는 9.x All-Apps 비호환(별도 재작성 필요).
 - **중복 방지 메모**: 액션 import 는 `vco_import_data_actions`(JS $data) + `vco_run_action`(검증). com.vmk 은 **재import 금지**(input-parameters 보존 — 이미 서버==리포). 호스트 등록은 `vcfa_register_host`.
+
+---
+
+## 2026-06-25 (이어서) — vCenter/vAPI 등록 + 폼 드롭다운 전수 검증 (라이브)
+
+- **상태**: DONE (getStorageClass PBM·getVMImage 라이브러리는 환경/콘텐츠 이슈로 보류)
+- **한 일**:
+  - 신규 헬퍼: `vco_run_action`(vRO 액션 직접 실행 REST), `vcfa_register_vcenter`, `vcfa_register_vapi`. `.env` 에 `VC_HOST/VC_USER/VC_PASS[/VC_PORT/VC_IGNORE_CERT/VAPI_ENDPOINT_URL]` 키 추가(example 2개).
+  - **vCenter**(`vcsa01.dtvcf.lab`) + **vAPI endpoint** + **vAPI metamodel**(`Import vAPI metamodel` 9eee7150) 등록 완료. (내가 예시로 준 `vcenter.dtvcf.lab` 은 DNS 없음 — provider API `/cloudapi/1.0.0/virtualCenters` 로 실주소 확인)
+  - getStorageClass: `VcPlugin.allSdkConnections`(세션-스코프, 빈값) → `Server.findAllForType("VC:SdkConnection")` 폴백 추가.
+- **수정한 파일**: `scripts/vcfa-vro-package-lib.sh`, `actions/com.vmk.dk/getStorageClass.js`, `.env.example`, `.env.tenant.example`
+- **검증 (vco_run_action, 라이브)**: 폼 드롭다운 11개 중 **10개 데이터 반환**. com.vmk(5)·com.vmk.dk(17) 등록 확인, vCenter 연결 dumpVcRoots 로 확인.
+- **남은 2개 (환경/콘텐츠 — .env/스크립트 영역 아님)**:
+  - **getVMImage**: vAPI+metamodel OK, 단 폼이 찾는 Content Library `vra-image` 가 vCenter 에 없음(존재: avi / licensehub-ssp-content-lib / Custom Kubernetes Service / Supervisor Images / Kubernetes Service). → 라이브러리 생성 또는 폼 `targetLibraryName` 변경.
+  - **getStorageClass**: vCenter 연결 OK + PBM 정책 19개 존재하나 액션의 `pbmProfileManager.pbmQueryProfile` 가 빈값(k8s 폴백만 반환). vCenter 플러그인 PBM 스크립팅 9.x 호환 의심 — 별도 조사.
+- **중복 방지 메모**: vCenter/vAPI 등록 = `vcfa_register_vcenter`/`vcfa_register_vapi`(+ `Import vAPI metamodel`). 등록 멱등 아님(중복 주의). smsUrl 은 비워둘 것(잘못된 값이면 302로 Add 실패).

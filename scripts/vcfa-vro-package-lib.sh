@@ -598,6 +598,49 @@ vco_run_action() {
   jq -c '.value' "$resp"; rm -f "$resp"
 }
 
+# Usage: vcfa_register_vcenter   (.env: VC_HOST/VC_USER/VC_PASS [VC_PORT VC_IGNORE_CERT])
+#   getStorageClass 의 스토리지 정책 소스 — 밑단 vCenter 를 vRO 에 등록.
+#   sessionPerUser=false (서비스 계정 공유 세션 → 폼 실행자 누구든 작동).
+vcfa_register_vcenter() {
+  : "${VC_HOST:?ERROR: VC_HOST 없음 (.env 에 vCenter FQDN)}"
+  : "${VC_USER:?ERROR: VC_USER 없음}"
+  : "${VC_PASS:?ERROR: VC_PASS 없음}"
+  local port="${VC_PORT:-443}"; local ignore="${VC_IGNORE_CERT:-true}"
+  echo "vCenter 등록 시도: host=${VC_HOST}:${port} user=${VC_USER} sessionPerUser=false"
+  local params; params=$(jq -n --arg host "$VC_HOST" --arg user "$VC_USER" --arg pass "$VC_PASS" \
+    --argjson port "$port" --argjson ignore "$ignore" '
+    [ {name:"enabled",                  type:"boolean",      value:{boolean:{value:true}}},
+      {name:"host",                     type:"string",       value:{string:{value:$host}}},
+      {name:"port",                     type:"number",       value:{number:{value:$port}}},
+      {name:"path",                     type:"string",       value:{string:{value:"/sdk"}}},
+      {name:"sessionPerUser",           type:"boolean",      value:{boolean:{value:false}}},
+      {name:"userName",                 type:"string",       value:{string:{value:$user}}},
+      {name:"password",                 type:"SecureString", value:{"secure-string":{value:$pass}}},
+      {name:"domain",                   type:"string",       value:{string:{value:""}}},
+      {name:"ignoreCertificateWarnings",type:"boolean",      value:{boolean:{value:$ignore}}},
+      {name:"httpPort",                 type:"number",       value:{number:{value:443}}},
+      {name:"pbmUrl",                   type:"string",       value:{string:{value:""}}},
+      {name:"smsUrl",                   type:"string",       value:{string:{value:""}}} ]')
+  vco_run_workflow f246b7b5-fe89-4da5-a640-36ffc6874069 "$params"
+}
+
+# Usage: vcfa_register_vapi   (.env: VC_HOST/VC_USER/VC_PASS [VAPI_ENDPOINT_URL VC_IGNORE_CERT])
+#   getVMImage 의 Content Library 소스 — vAPI endpoint 등록. 기본 URL=https://${VC_HOST}/api.
+vcfa_register_vapi() {
+  : "${VC_USER:?ERROR: VC_USER 없음}"
+  : "${VC_PASS:?ERROR: VC_PASS 없음}"
+  local url="${VAPI_ENDPOINT_URL:-https://${VC_HOST:?ERROR: VC_HOST 또는 VAPI_ENDPOINT_URL 필요}/api}"
+  local ignore="${VC_IGNORE_CERT:-true}"
+  echo "vAPI endpoint 등록 시도: url=${url} user=${VC_USER}"
+  local params; params=$(jq -n --arg url "$url" --arg user "$VC_USER" --arg pass "$VC_PASS" --argjson ignore "$ignore" '
+    [ {name:"endpointUrl",              type:"string",       value:{string:{value:$url}}},
+      {name:"username",                 type:"string",       value:{string:{value:$user}}},
+      {name:"password",                 type:"SecureString", value:{"secure-string":{value:$pass}}},
+      {name:"ignoreCertificateWarnings",type:"boolean",      value:{boolean:{value:$ignore}}},
+      {name:"useSecureConnection",      type:"boolean",      value:{boolean:{value:true}}} ]')
+  vco_run_workflow 9fa581be-16e8-4bd5-b650-248923b494b8 "$params"
+}
+
 # ============================================================
 # $data vRO 액션 = blueprint 입력 드롭다운/계산값 소스.
 # Cloud Assembly 는 output-type 이 'Any' 인 액션을 $data 로 인덱싱하지 않음

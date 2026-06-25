@@ -13,6 +13,11 @@ function toStorageClassValue(name) {
 
 // 1. [수정 및 추가된 부분] 하드코딩된 배열을 삭제하고 vCenter의 스토리지 정책을 동적으로 조회합니다.
 var vcenters = VcPlugin.allSdkConnections || [];
+// allSdkConnections 는 세션-스코프 → 폼 실행 컨텍스트에서 비어있을 수 있음.
+// 그 경우 인벤토리 연결로 폴백 (dumpVcRoots 와 동일 소스, 검증됨).
+if (!vcenters || vcenters.length === 0) {
+    vcenters = Server.findAllForType("VC:SdkConnection") || [];
+}
 
 for (var i = 0; i < vcenters.length; i++) {
     var vc = vcenters[i];
