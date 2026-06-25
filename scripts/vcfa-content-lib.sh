@@ -648,6 +648,18 @@ form_remote_import() {
   [[ -f "$f" ]] || { echo "ERROR: file not found: $f" >&2; return 1; }
   _remote_guard || return 1
 
+  # ★ 같은 catalog item 에 기존 폼이 있으면 POST 는 *교체하지 않고 무시*함(201 OK 줘도 옛 폼 유지).
+  #   → 재import 가 반영되려면 기존 폼을 먼저 삭제해야 함.
+  local _existing
+  _existing=$(curl -sk -H "Authorization: Bearer ${TOKEN}" -H "Accept: application/json" \
+    "https://${VCFA_FQDN}/form-service/api/forms/fetchBySourceAndType?formType=requestForm&sourceId=${src}&sourceType=com.vmw.blueprint" \
+    | jq -r '.id // empty' 2>/dev/null)
+  if [[ -n "$_existing" ]]; then
+    echo "  기존 폼 삭제(교체): ${_existing}"
+    curl -sk -X DELETE -H "Authorization: Bearer ${TOKEN}" \
+      "https://${VCFA_FQDN}/form-service/api/forms/${_existing}" >/dev/null 2>&1
+  fi
+
   local form_str; form_str=$(jq -Rs '.' < "$f")
   local body; body=$(mktemp /tmp/form-imp.XXXXXX)
   jq -n --arg src "$src" --argjson form "$form_str" \

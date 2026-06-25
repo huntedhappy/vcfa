@@ -667,6 +667,16 @@ vcfa_register_vapi() {
       {name:"ignoreCertificateWarnings",type:"boolean",      value:{boolean:{value:$ignore}}},
       {name:"useSecureConnection",      type:"boolean",      value:{boolean:{value:true}}} ]')
   vco_run_workflow 9fa581be-16e8-4bd5-b650-248923b494b8 "$params"
+  # getVMImage 의 com_vmware_content_* 클래스 생성 — vAPI metamodel import (endpoint 는 위에서 추가 → addEndpoint=false)
+  echo "vAPI metamodel import (getVMImage 용 com_vmware_content_* 클래스)"
+  local mm; mm=$(jq -n --arg url "$url" --arg user "$VC_USER" --arg pass "$VC_PASS" --argjson ignore "$ignore" '
+    [ {name:"endpointUrl",              type:"string",       value:{string:{value:$url}}},
+      {name:"username",                 type:"string",       value:{string:{value:$user}}},
+      {name:"password",                 type:"SecureString", value:{"secure-string":{value:$pass}}},
+      {name:"ignoreCertificateWarnings",type:"boolean",      value:{boolean:{value:$ignore}}},
+      {name:"useSecureConnection",      type:"boolean",      value:{boolean:{value:true}}},
+      {name:"addEndpoint",              type:"boolean",      value:{boolean:{value:false}}} ]')
+  vco_run_workflow 9eee7150-b606-46c8-8caa-5b5d927ff5bc "$mm"
 }
 
 # ============================================================

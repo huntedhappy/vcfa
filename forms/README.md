@@ -37,6 +37,16 @@ form_remote_delete <form-id>
 
 서버는 `form` 필드를 YAML 문자열로 받음 (`formFormat:"YAML"`). 사용자가 yq 로 미리 JSON 변환할 필요 없음.
 
+### ⚠️ 재import = "삭제 후 재생성" 이어야 함 (중요, 2026-06-25 검증)
+
+`POST /form-service/api/forms` 는 **같은 catalog item 에 폼이 이미 있으면 교체하지 않고 무시**합니다 (201 OK 를 줘도 기존 폼이 그대로 바인딩됨). 그래서 폼을 수정한 뒤 그냥 다시 import 하면 **변경이 반영되지 않습니다.**
+
+- `form_remote_import` 는 이제 **내부에서 기존 폼을 먼저 삭제한 뒤 재생성**하므로 그냥 호출하면 됩니다(`기존 폼 삭제(교체): <id>` 로그가 보이면 정상).
+- 수동(UI/curl)으로 할 땐 반드시 `form_remote_delete <기존 form-id>` → `form_remote_import` 순서로.
+- 확인: `fetchBySourceAndType?formType=requestForm&sourceId=<ITEM_ID>&sourceType=com.vmw.blueprint` 의 `id` 가 바뀌면 교체된 것.
+
+> 참고: 폼 내용이 이미 맞다면(=리포와 동일) 재생성해도 `form` 길이는 같습니다. **카탈로그 드롭다운이 무한로딩이면 폼/import 문제가 아니라** vRO 데이터소스 평가(호스트 세션·VCFA↔vRO 통합) 문제이니 [../docs/runbooks/deploy.md](../docs/runbooks/deploy.md) 트러블슈팅 표 참조.
+
 ## Import — UI (대안)
 
 ```text

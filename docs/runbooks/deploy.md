@@ -16,6 +16,67 @@
 
 ---
 
+## ⚡ 빠른 실행 — 스크립트 자동화 (라이브 검증 2026-06-25)
+
+> `scripts/`의 헬퍼로 처음부터 끝까지 자동화한, **실제 검증된 절차**. 아래 수동 UI 절차(1장 이후)보다 이걸 우선하세요.
+> 함수 정의: `scripts/vcfa-vro-package-lib.sh` / `scripts/vcfa-content-lib.sh`.
+
+### 0) `.env.tenant` 준비 (최초 1회) — `.env.tenant.example` 참조
+
+| 키 | 용도 |
+| --- | --- |
+| `VCFA_FQDN` `VCFA_USER` `VCFA_TENANT_ORG` `VCFA_PASS` `VCFA_API_VERSION` | 로그인 (tenant 모드) |
+| **`VCFA_HOST_API_TOKEN`** | 카탈로그 폼 드롭다운 동작에 **필수**. VCFA 콘솔 UI 우상단 사용자메뉴 → **API Tokens → Generate** 로 발급(API로는 거부됨). |
+| `VC_HOST` `VC_USER` `VC_PASS` | 밑단 vCenter — Storage Class / VM Image 소스용 |
+
+### 1) 세션 로그인
+```bash
+source scripts/session.sh .env.tenant
+```
+
+### 2) vRO 액션 import (`com.vmk.dk`)
+```bash
+vco_import_data_actions          # JS $data 액션 — output-type/inputs 자동
+# Python 3개 (runtime=python:3.10 자동감지):
+vco_import_action actions/com.vmk.dk/doubleBase64.js          com.vmk.dk string '[{"name":"TrustCA","type":"string","description":""}]'
+vco_import_action actions/com.vmk.dk/ChangePasswordHash.js    com.vmk.dk string '[{"name":"passwd","type":"string","description":""}]'
+vco_import_action actions/com.vmk.dk/validatePasswordMatch.js com.vmk.dk string '[{"name":"pw1","type":"string","description":""},{"name":"pw2","type":"string","description":""}]'
+```
+> `com.vmk` 5개(ConfManager/TaskManager/Vcsa·Vra·NsxtManager)는 **서버에 이미 있음 → 재import 금지**(input 파라미터 손상). VraManager 등은 9.x All-Apps 비호환 레거시(아래 4장 참조).
+
+### 3) 인벤토리 호스트 등록 (드롭다운 데이터 소스)
+```bash
+vcfa_register_host        # VCFA:Host (projects/namespaces). VCFA_HOST_API_TOKEN 있으면 Shared Session 자동(카탈로그 폼 동작), 기존 호스트면 Update.
+vcfa_register_vcenter     # vCenter (getStorageClass)
+vcfa_register_vapi        # vAPI endpoint + metamodel (getVMImage)
+```
+
+### 4) 검증
+```bash
+vco_run_action com.vmk.dk/getProjectsNames                        # → ["vcfa2","default-project",...] (빈값이면 호스트/토큰 문제)
+vco_run_action com.vmk.dk/getNamespaces ProjectName=default-project
+vco_check_data_actions                                            # 각 $data 의 output-type 점검
+```
+
+### 5) 블루프린트 / 폼 (REST 자동화)
+```bash
+catalog_remote_list                                              # 현재 카탈로그 item
+content_publish blueprints/vm/blueprint_vm.yaml forms/vm/custom_vm.yml   # import→release→form 체이닝
+# 일괄: content_publish_all
+```
+
+### 함정 / 트러블슈팅 (검증됨)
+
+| 증상 | 원인 / 조치 |
+| --- | --- |
+| **카탈로그 폼이 전부 무한로딩** | VCFA:Host 가 `Per User Session` 이거나 API 토큰 만료. `VCFA_HOST_API_TOKEN` 갱신 → `vcfa_register_host` 재실행(Shared Session). |
+| 직접 RUN은 되는데 카탈로그만 빈값 | 위와 동일 (카탈로그는 서비스 컨텍스트라 per-user 세션 없음 → Shared Session 필요). |
+| VM Image 드롭다운 비어있음 | vCenter 에 `vra-image` Content Library 가 없음 → 생성하거나 폼의 `targetLibraryName` 을 실제 라이브러리명으로 변경. |
+| Storage Class 가 `k8s` 만 | vCenter PBM 정책이 9.x vCenter 플러그인에서 안 올라옴(별건, 조사 필요). |
+| `$data` 액션 throw | 액션은 throw 금지 → `[]` 반환해야 폼이 안 깨짐(이미 적용됨). |
+
+---
+
 ## 0. 사전 준비
 
 - 오프라인 환경이면 먼저 [offline-setup.md](offline-setup.md) 완료.
