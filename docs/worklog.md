@@ -352,3 +352,20 @@
   - **getVMImage**: vAPI+metamodel OK, 단 폼이 찾는 Content Library `vra-image` 가 vCenter 에 없음(존재: avi / licensehub-ssp-content-lib / Custom Kubernetes Service / Supervisor Images / Kubernetes Service). → 라이브러리 생성 또는 폼 `targetLibraryName` 변경.
   - **getStorageClass**: vCenter 연결 OK + PBM 정책 19개 존재하나 액션의 `pbmProfileManager.pbmQueryProfile` 가 빈값(k8s 폴백만 반환). vCenter 플러그인 PBM 스크립팅 9.x 호환 의심 — 별도 조사.
 - **중복 방지 메모**: vCenter/vAPI 등록 = `vcfa_register_vcenter`/`vcfa_register_vapi`(+ `Import vAPI metamodel`). 등록 멱등 아님(중복 주의). smsUrl 은 비워둘 것(잘못된 값이면 302로 Add 실패).
+
+---
+
+## 2026-06-25 (이어서2) — 카탈로그 폼 무한로딩 해결: Shared Session + 지속 API 토큰
+
+- **상태**: DONE
+- **증상**: 폼 드롭다운이 vRO 직접 실행은 되는데 **카탈로그 요청 폼에서만 무한로딩**.
+- **원인 2겹**:
+  1. **getVMImage 가 throw**(vra-image 라이브러리 없음) → 폼-서비스의 탭 데이터 평가가 통째로 깨져 전 드롭다운 로딩. → getVMImage/getProjectsNames/getNamespaces 를 throw 대신 `[]` 반환으로 견고화.
+  2. **VCFA:Host 가 `Per User Session`** → 카탈로그는 서비스 컨텍스트라 per-user 세션이 없어 빈값. `Shared Session` 이 필요한데 **저장 apiToken 이 만료성 access token 이면 fetchAll 실패**. → **VCFA 콘솔 UI 에서 API 토큰 발급**(API 로는 403/400 거부) → `.env` 의 `VCFA_HOST_API_TOKEN` 으로 주입 → Shared Session 으로 갱신 → getProjectsNames 실값 확인.
+- **한 일**:
+  - `vcfa_register_host`: 기존 호스트면 Update 자동, `VCFA_HOST_API_TOKEN` 있으면 Shared Session 자동 선택, apiToken 우선순위(API토큰>세션토큰).
+  - `.env` 키 추가: `VCFA_HOST_API_TOKEN` (지속 VCFA API 토큰).
+  - getVMImage/getProjectsNames/getNamespaces: 모든 오류 경로 throw→`[]`.
+- **수정한 파일**: `scripts/vcfa-vro-package-lib.sh`, `actions/com.vmk.dk/{getVMImage,getProjectsNames,getNamespaces}.js`, `.env*.example`
+- **검증(라이브)**: Shared Session + API토큰 → getProjectsNames=`["vcfa2","default-project","vcfa1"]`, getNamespaces=`["hh-ns-zqbhb","vcfa-7f4cv"]`. (사용자 UI 폼 재확인 대기)
+- **남은 것(콘텐츠)**: getVMImage=vCenter 에 `vra-image` 라이브러리 생성 필요, getStorageClass=PBM 정책 안 옴(9.x 플러그인 호환 의심).

@@ -540,25 +540,53 @@ vcfa_register_host() {
   : "${VCFA_FQDN:?ERROR: VCFA_FQDN 없음 — source scripts/session.sh .env.tenant 먼저}"
   : "${TOKEN:?ERROR: TOKEN 없음 — 로그인 먼저}"
   local name="${1:-vcfa-auto}"
-  # 검증된 기본값 (2026-06-25, vcfa.dtvcf.lab): "Per User Session" 라야 projects/namespaces 가
-  # enumerate 됨. "Shared Session" 은 fetchAll Project 실패. k8sApiVersion=v1alpha2.
-  local ctype="${2:-${VCFA_CONNECTION_TYPE:-Per User Session}}"
+  # connectionType:
+  #   "Per User Session" — 호출자(로그인 유저) 세션 사용. vRO 직접 RUN/REST 는 됨, 카탈로그 폼은 안 됨(서비스 컨텍스트라 per-user 세션 없음).
+  #   "Shared Session"   — 저장된 apiToken 으로 모두가 연결(카탈로그 폼 포함). 단 apiToken 이 *지속 VCFA API 토큰*이어야 fetchAll 됨
+  #                        (만료성 access token 은 fetchAll 실패). → .env 의 VCFA_HOST_API_TOKEN 으로 API 토큰 주입.
+  # 기본값: 지속 API 토큰(VCFA_HOST_API_TOKEN) 있으면 카탈로그 폼까지 되는 "Shared Session", 없으면 "Per User Session"(직접 실행만).
+  local default_ct; default_ct=$([ -n "${VCFA_HOST_API_TOKEN:-}" ] && echo "Shared Session" || echo "Per User Session")
+  local ctype="${2:-${VCFA_CONNECTION_TYPE:-$default_ct}}"
   local k8sver="${3:-${VCFA_K8S_API_VERSION:-v1alpha2}}"
   local tenant="${VCFA_TENANT_ORG:-}"
+  # apiToken: VCFA_HOST_API_TOKEN(지속 API 토큰) 우선, 없으면 현재 세션 TOKEN.
+  local apitoken="${VCFA_HOST_API_TOKEN:-$TOKEN}"
 
-  echo "호스트 등록 시도: name=${name} host=${VCFA_FQDN} tenant=${tenant} connectionType='${ctype}' k8sApiVersion='${k8sver}'"
-  local params
-  params=$(jq -n \
-    --arg host "$VCFA_FQDN" --arg tenant "$tenant" --arg name "$name" \
-    --arg ctype "$ctype" --arg k8s "$k8sver" --arg tok "$TOKEN" '
-    [ {name:"name",              type:"string",       value:{string:{value:$name}}},
-      {name:"vcfaHost",          type:"string",       value:{string:{value:$host}}},
-      {name:"tenant",            type:"string",       value:{string:{value:$tenant}}},
-      {name:"connectionType",    type:"string",       value:{string:{value:$ctype}}},
-      {name:"k8sApiVersion",     type:"string",       value:{string:{value:$k8s}}},
-      {name:"acceptCertificate", type:"boolean",      value:{boolean:{value:true}}},
-      {name:"apiToken",          type:"SecureString", value:{"secure-string":{value:$tok}}} ]')
-  vco_run_workflow "18425ea8-e7b4-4b64-9e2a-69f0a9081115" "$params"
+  # 같은 이름의 호스트가 이미 있으면 Update, 없으면 Add (Add 만 호출하면 'already exists' 로 실패).
+  local base; base=$(_vco_base) || return 1
+  local existing_id
+  existing_id=$(curl -sk -H "Authorization: Bearer ${TOKEN}" -H "Accept: application/json" \
+    "${base}/catalog/VCFA/Host" \
+    | jq -r --arg n "$name" '(.relations.link // .link // [])[]? | (.attributes // [] | from_entries) | select(.name==$n) | .id' 2>/dev/null | head -1)
+
+  echo "호스트 $([ -n "$existing_id" ] && echo '갱신(Update)' || echo '등록(Add)'): name=${name} host=${VCFA_FQDN} tenant=${tenant} connectionType='${ctype}' k8sApiVersion='${k8sver}' apiToken=$([ -n "${VCFA_HOST_API_TOKEN:-}" ] && echo 'VCFA_HOST_API_TOKEN(지속)' || echo '세션 TOKEN(만료성)')"
+
+  local params wfid
+  if [[ -n "$existing_id" ]]; then
+    wfid="ed3f36e6-3263-488b-bd5c-0f8f1cf0596f"   # Update a VCF Automation Host
+    params=$(jq -n --arg id "$existing_id" --arg host "https://${VCFA_FQDN}" --arg name "$name" \
+      --arg tenant "$tenant" --arg ctype "$ctype" --arg k8s "$k8sver" --arg tok "$apitoken" '
+      [ {name:"vcfaHost",         type:"VCFA:Host",    value:{"sdk-object":{type:"VCFA:Host",id:$id}}},
+        {name:"name",             type:"string",       value:{string:{value:$name}}},
+        {name:"host",             type:"string",       value:{string:{value:$host}}},
+        {name:"k8sApiVersion",    type:"string",       value:{string:{value:$k8s}}},
+        {name:"apiToken",         type:"SecureString", value:{"secure-string":{value:$tok}}},
+        {name:"tenant",           type:"string",       value:{string:{value:$tenant}}},
+        {name:"acceptCertificate",type:"boolean",      value:{boolean:{value:true}}},
+        {name:"connectionType",   type:"string",       value:{string:{value:$ctype}}} ]')
+  else
+    wfid="18425ea8-e7b4-4b64-9e2a-69f0a9081115"   # Add a VCF Automation Host
+    params=$(jq -n --arg host "$VCFA_FQDN" --arg tenant "$tenant" --arg name "$name" \
+      --arg ctype "$ctype" --arg k8s "$k8sver" --arg tok "$apitoken" '
+      [ {name:"name",             type:"string",       value:{string:{value:$name}}},
+        {name:"vcfaHost",         type:"string",       value:{string:{value:$host}}},
+        {name:"tenant",           type:"string",       value:{string:{value:$tenant}}},
+        {name:"connectionType",   type:"string",       value:{string:{value:$ctype}}},
+        {name:"k8sApiVersion",    type:"string",       value:{string:{value:$k8s}}},
+        {name:"acceptCertificate",type:"boolean",      value:{boolean:{value:true}}},
+        {name:"apiToken",         type:"SecureString", value:{"secure-string":{value:$tok}}} ]')
+  fi
+  vco_run_workflow "$wfid" "$params"
 }
 
 # Usage: vco_run_action MODULE/NAME [PARAMS_JSON | name=value ...]
