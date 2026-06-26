@@ -925,9 +925,11 @@ content_publish() {
 
 content_publish_all() {
   # Usage: content_publish_all [--include-archive] [--cleanup-on-fail]
-  # 기본: blueprints/ 의 archive/ 제외 모든 *.yaml/*.yml 을 import → release → 짝 form 적용.
+  # 기본: blueprints/ 의 archive/ 제외 모든 *.yaml/*.yml 을 import → 짝 form 을 블루프린트에 set(release 前) → release.
+  #   ★ 폼은 bp_set_form 으로 *release 前에* 블루프린트에 set 해야 9.x 카탈로그가 가져감
+  #     (form-service 의 form_remote_import 는 9.x 카탈로그가 안 씀). content_publish(단수)와 동일 경로.
   # 짝 form 은 content_pairs 와 동일한 키 매칭 규칙 사용.
-  # --cleanup-on-fail: release/form 실패 시 그 단계에서 만들어진 DRAFT blueprint 자동 삭제 (서버 잔여물 방지).
+  # --cleanup-on-fail: form set/release 실패 시 그 단계에서 만들어진 DRAFT blueprint 자동 삭제 (서버 잔여물 방지).
   local include_archive=0 cleanup_on_fail=0 skip_preflight=0
   for arg in "$@"; do
     case "$arg" in
@@ -973,9 +975,35 @@ content_publish_all() {
     echo "▶ ${rel}"
     echo "==================================================================="
 
-    # 1) blueprint import + release
+    # 1) blueprint import (release 前 — 폼을 먼저 블루프린트에 set 해야 9.x 카탈로그가 가져감)
     bp_remote_import "$bp_file" || { results+=("FAIL  ${rel}  (import)"); rc_global=1; continue; }
     local imported_bp_id="${VCFA_BP_ID:-}"
+
+    # 2) 짝 form 찾기 (파일명 키 매칭)
+    key=$(basename "$bp_file" | sed -E 's/\.(yaml|yml)$//; :a; s/^(blueprint_|custom_|vra_|vcfa_)//; ta')
+    form_file=""
+    while IFS= read -r ff; do
+      fkey=$(basename "$ff" | sed -E 's/\.(yaml|yml)$//; :a; s/^(blueprint_|custom_|vra_|vcfa_)//; ta')
+      if [[ "$fkey" == "$key" ]]; then form_file="$ff"; break; fi
+    done < <(find "$form_dir" -type f \( -name "*.yaml" -o -name "*.yml" \) ! -path "*/archive/*" | sort)
+
+    # 3) 커스텀 폼을 *블루프린트에* set — ★ 반드시 release 前 (form-service 의 form_remote_import 는
+    #    9.x 카탈로그가 안 쓰므로 사용하지 않음). bp_set_form 이 signpostPosition 도 제거.
+    if [[ -n "$form_file" ]]; then
+      echo ""
+      echo "  ▷ 짝 form: ${form_file#${root}/}  (블루프린트에 set, release 前)"
+      if ! bp_set_form "$imported_bp_id" "$form_file"; then
+        results+=("FAIL  ${rel}  (form set)")
+        rc_global=1
+        if [[ "$cleanup_on_fail" -eq 1 && -n "$imported_bp_id" ]]; then
+          echo "  cleanup: form set 실패 → DRAFT blueprint 삭제 ($imported_bp_id)"
+          bp_remote_delete "$imported_bp_id" || true
+        fi
+        continue
+      fi
+    fi
+
+    # 4) release (폼 포함 → 카탈로그 반영)
     if ! bp_remote_release; then
       results+=("FAIL  ${rel}  (release)")
       rc_global=1
@@ -986,27 +1014,8 @@ content_publish_all() {
       continue
     fi
 
-    # 2) 짝 form 찾기 (파일명 키 매칭)
-    key=$(basename "$bp_file" | sed -E 's/\.(yaml|yml)$//; :a; s/^(blueprint_|custom_|vra_|vcfa_)//; ta')
-    form_file=""
-    while IFS= read -r ff; do
-      fkey=$(basename "$ff" | sed -E 's/\.(yaml|yml)$//; :a; s/^(blueprint_|custom_|vra_|vcfa_)//; ta')
-      if [[ "$fkey" == "$key" ]]; then form_file="$ff"; break; fi
-    done < <(find "$form_dir" -type f \( -name "*.yaml" -o -name "*.yml" \) ! -path "*/archive/*" | sort)
-
     if [[ -n "$form_file" ]]; then
-      echo ""
-      echo "  ▷ 짝 form: ${form_file#${root}/}"
-      if form_remote_import "$form_file"; then
-        results+=("OK    ${rel}  + ${form_file#${root}/}")
-      else
-        results+=("PARTIAL ${rel}  (form 실패)")
-        rc_global=1
-        if [[ "$cleanup_on_fail" -eq 1 && -n "$imported_bp_id" ]]; then
-          echo "  cleanup: form 실패 → blueprint 도 삭제 ($imported_bp_id)"
-          bp_remote_delete "$imported_bp_id" || true
-        fi
-      fi
+      results+=("OK    ${rel}  + ${form_file#${root}/}  (form set→release)")
     else
       results+=("OK    ${rel}  (짝 form 없음 — skip)")
     fi
