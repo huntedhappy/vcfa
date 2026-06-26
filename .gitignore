@@ -6,3 +6,6 @@
 !.env.example
 !.env.tenant.example
 scripts/config.local.*
+
+# HAR 캡처 — Authorization Bearer 토큰/세션 포함되므로 커밋 금지
+*.har
