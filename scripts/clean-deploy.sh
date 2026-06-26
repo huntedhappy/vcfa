@@ -101,6 +101,43 @@ if command -v vco_check_data_actions >/dev/null 2>&1; then
   vco_check_data_actions || warn "preflight 경고 — 위 출력 확인 (Any/누락 액션이 있으면 release 전에 해결)"
 fi
 
+# ── [2.7] Drift 검사 — 라이브(UI 수정분) vs 로컬(레포). 다르면 경고 + 덮어쓰기 확인 ──
+#   [3] 은 동명 blueprint(현재 project)를 삭제 후 재생성하므로, UI 에서 고친 내용이 있으면 사라진다.
+#   덮어쓰기 直前에 비교해서 drift 가 있으면 사용자에게 물어본다(파일은 안 건드리는 read-only 검사).
+#   제어 env:  VCFA_SKIP_DRIFT_CHECK=1 (검사 자체를 생략)  ·  VCFA_FORCE_OVERWRITE=1 (확인 없이 덮어쓰기)
+step "[2.7] Drift 검사 — 라이브 vs 로컬 비교 (덮어쓰기 前 안전장치)"
+if [ "${VCFA_SKIP_DRIFT_CHECK:-0}" = "1" ]; then
+  warn "VCFA_SKIP_DRIFT_CHECK=1 — drift 검사 생략 (라이브가 그대로 덮어쓰기 됨)"
+elif typeset -f content_drift_check >/dev/null 2>&1; then
+  if content_drift_check; then
+    ok "drift 없음 — 라이브가 레포와 동일(또는 라이브에 없어 신규). 안전하게 진행."
+  else
+    drift_rc=$?
+    echo
+    if [ "$drift_rc" = 2 ]; then
+      warn "drift 검사를 수행하지 못함(위 ERROR). 라이브 상태 확인 후 진행 여부를 판단하세요."
+    else
+      warn "라이브 VCFA 에 로컬과 다른 내용이 있습니다(위 ⚠). 덮어쓰면 그 수정분이 사라집니다."
+      warn "  권장: 먼저  bash scripts/clean-export.sh  로 라이브를 레포로 받아 보존/검토."
+    fi
+    if [ "${VCFA_FORCE_OVERWRITE:-0}" = "1" ]; then
+      warn "VCFA_FORCE_OVERWRITE=1 — 확인 없이 덮어쓰기 진행."
+    elif [ ! -t 0 ]; then
+      die "비대화형 실행 + drift 감지 → 중단. 덮어쓰려면 VCFA_FORCE_OVERWRITE=1, 검사 생략은 VCFA_SKIP_DRIFT_CHECK=1."
+    else
+      printf '  그래도 덮어쓸까요? [y/N]: '
+      ans=""
+      if typeset -f _vcfa_read_line >/dev/null 2>&1; then _vcfa_read_line ans; else read -r ans; fi
+      case "$ans" in
+        y|Y|yes|YES|Yes) ok "사용자 확인 — 덮어쓰기 진행";;
+        *) die "중단(사용자 취소). 라이브를 받으려면: bash scripts/clean-export.sh";;
+      esac
+    fi
+  fi
+else
+  warn "content_drift_check 헬퍼 없음 — drift 검사 건너뜀 (라이브가 덮어쓰기 됩니다). 라이브 보존이 필요하면 clean-export.sh 먼저."
+fi
+
 # ── [3] 블루프린트 + 커스텀 폼 import & release ──────────────
 step "[3] 블루프린트 + 커스텀 폼 import & release  (fresh 강제, signpostPosition 자동 제거, preflight 포함)"
 # content_publish_all = blueprints/(archive 제외) 전부 import→폼 set(release 前)→release.

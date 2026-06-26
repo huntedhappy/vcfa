@@ -1034,3 +1034,101 @@ content_publish_all() {
 
   return $rc_global
 }
+
+# ============================================================
+# Drift 검사 — 로컬(레포) ↔ 라이브(VCFA) 비교 (import/덮어쓰기 前 안전장치)
+# ------------------------------------------------------------
+#   누가 VCFA UI 에서 blueprint/form 을 고쳤는지(=라이브가 레포와 달라졌는지) 검사.
+#   blueprint .content 와 블루프린트에 붙은 form 을 *의미 비교*(공백·키순서 무시, signpostPosition 제거).
+#   파일을 건드리지 않는 read-only. 반환값:
+#     0 = drift 없음(라이브가 레포와 동일하거나, 라이브에 없어 신규 생성)
+#     1 = drift 감지(라이브에 로컬과 다른 내용 — 덮어쓰면 손실)  ← 호출측이 확인 프롬프트 띄우면 됨
+#   주의: 의미 비교라 드물게 오탐(서버 주입 필드 등) 가능 — '경고+확인'용 advisory 지표.
+# ============================================================
+_vcfa_norm_json() { # stdin: JSON → stdout: 키정렬 canonical (signpostPosition 제거)
+  jq -S 'walk(if type=="object" and has("signpostPosition") then del(.signpostPosition) else . end)' 2>/dev/null
+}
+_vcfa_yaml_norm() { # $1: YAML 파일 → stdout: canonical JSON
+  yq -o=json -I=0 '.' "$1" 2>/dev/null | _vcfa_norm_json
+}
+
+content_drift_check() {
+  _remote_guard || return 2
+  require_cmd jq || return 2
+  require_cmd yq || return 2
+  local root; root=$(_content_root)
+  local bp_dir="${root}/blueprints" form_dir="${root}/forms"
+  local pid; pid=$(_project_id) || return 2
+
+  local list; list=$(mktemp /tmp/drift-list.XXXXXX)
+  if ! vcfa_api_get "https://${VCFA_FQDN}/blueprint/api/blueprints?page=0&size=200" > "$list" 2>/dev/null; then
+    echo "ERROR: 라이브 blueprint 목록 조회 실패 — drift 검사 불가" >&2; rm -f "$list"; return 2
+  fi
+
+  local files=()
+  while IFS= read -r f; do files+=("$f"); done \
+    < <(find "$bp_dir" -type f \( -name "*.yaml" -o -name "*.yml" \) ! -path "*/archive/*" | sort)
+  if [[ ${#files[@]} -eq 0 ]]; then echo "  (검사할 로컬 blueprint 없음)"; rm -f "$list"; return 0; fi
+
+  local drift=0 bp_file name id rel key fkey form_file
+  for bp_file in "${files[@]}"; do
+    rel="${bp_file#${root}/}"
+    name=$(basename "$bp_file" | sed -E 's/\.(yaml|yml)$//; s/^blueprint_//')
+    # 현재 project 동명 우선, 없으면 아무 project, 최신
+    id=$(jq -r --arg n "$name" --arg pid "$pid" '
+      [.content[]?|select(.name==$n)] as $b
+      | (($b|map(select(.projectId==$pid)))|if length>0 then . else $b end)
+      | sort_by(.updatedAt//.createdAt//"")|last|.id // empty' "$list")
+    if [[ -z "$id" ]]; then
+      echo "  ✚ ${name}: 라이브에 없음 → 신규 생성 (덮어쓰기 아님)"
+      continue
+    fi
+
+    # 1) blueprint content
+    local live_bp; live_bp=$(mktemp /tmp/drift-bp.XXXXXX)
+    if vcfa_api_get "https://${VCFA_FQDN}/blueprint/api/blueprints/${id}" > "$live_bp" 2>/dev/null; then
+      local live_c local_c
+      live_c=$(jq -r '.content // empty' "$live_bp" | yq -o=json -I=0 '.' 2>/dev/null | _vcfa_norm_json)
+      local_c=$(_vcfa_yaml_norm "$bp_file")
+      if [[ -z "$live_c" ]]; then
+        echo "  ? ${name}: 라이브 content 비어/파싱불가 — 비교 생략"
+      elif [[ "$live_c" != "$local_c" ]]; then
+        echo "  ⚠ ${name}: blueprint 가 라이브에서 변경됨 — 덮어쓰면 라이브 수정분 손실 (${rel})"
+        drift=1
+      else
+        echo "  ✓ ${name}: blueprint 동일"
+      fi
+    else
+      echo "  ? ${name}: 라이브 blueprint(${id}) 조회 실패 — 비교 생략"
+    fi
+    rm -f "$live_bp"
+
+    # 2) 짝 form (로컬에 있을 때만)
+    key=$(basename "$bp_file" | sed -E 's/\.(yaml|yml)$//; :a; s/^(blueprint_|custom_|vra_|vcfa_)//; ta')
+    form_file=""
+    while IFS= read -r ff; do
+      fkey=$(basename "$ff" | sed -E 's/\.(yaml|yml)$//; :a; s/^(blueprint_|custom_|vra_|vcfa_)//; ta')
+      [[ "$fkey" == "$key" ]] && { form_file="$ff"; break; }
+    done < <(find "$form_dir" -type f \( -name "*.yaml" -o -name "*.yml" \) ! -path "*/archive/*" | sort)
+    if [[ -n "$form_file" ]]; then
+      local live_form; live_form=$(vcfa_api_get \
+        "https://${VCFA_FQDN}/blueprint/api/blueprints/${id}/form?apiVersion=2020-08-25" 2>/dev/null \
+        | jq -r '.form // empty')
+      if [[ -z "$live_form" ]]; then
+        echo "      · form: 라이브에 폼 없음 → 새로 set (덮어쓰기 아님)"
+      else
+        local live_fn local_fn
+        live_fn=$(printf '%s' "$live_form" | _vcfa_norm_json)
+        local_fn=$(_vcfa_yaml_norm "$form_file")
+        if [[ "$live_fn" != "$local_fn" ]]; then
+          echo "      ⚠ form 이 라이브에서 변경됨 — 덮어쓰면 손실 (${form_file#${root}/})"
+          drift=1
+        else
+          echo "      ✓ form 동일"
+        fi
+      fi
+    fi
+  done
+  rm -f "$list"
+  return $drift
+}
