@@ -48,7 +48,7 @@ vco_import_action actions/com.vmk.dk/validatePasswordMatch.js com.vmk.dk string 
 ```bash
 vcfa_register_host        # VCFA:Host (projects/namespaces). VCFA_HOST_API_TOKEN 있으면 Shared Session 자동(카탈로그 폼 동작), 기존 호스트면 Update.
 vcfa_register_vcenter     # vCenter (getStorageClass)
-vcfa_register_vapi        # vAPI endpoint + metamodel (getVMImage)
+# vcfa_register_vapi      # (선택/레거시) 2026-06-26 이후 어떤 $data 액션도 미사용(전부 CCI). 수동 VAPIManager 용도만.
 ```
 
 ### 4) 검증
@@ -71,7 +71,7 @@ content_publish blueprints/vm/blueprint_vm.yaml forms/vm/custom_vm.yml   # impor
 | --- | --- |
 | **카탈로그 폼이 전부 무한로딩** | VCFA:Host 가 `Per User Session` 이거나 API 토큰 만료. `VCFA_HOST_API_TOKEN` 갱신 → `vcfa_register_host` 재실행(Shared Session). |
 | 직접 RUN은 되는데 카탈로그만 빈값 | 위와 동일 (카탈로그는 서비스 컨텍스트라 per-user 세션 없음 → Shared Session 필요). |
-| VM Image 드롭다운 비어있음 | vCenter 에 `vra-image` Content Library 가 없음 → 생성하거나 폼의 `targetLibraryName` 을 실제 라이브러리명으로 변경. |
+| VM Image 드롭다운 비어있음 | `getVMImage` 는 VCFA:Host 의 CCI 프록시로 `clustervirtualmachineimages` 를 조회(입력 없음). 빈값이면 VCFA:Host 등록/토큰 또는 Supervisor 에 published VM 이미지 유무 확인. (더 이상 vAPI·`vra-image` 라이브러리 불필요) |
 | Storage Class 가 `k8s` 만 | vCenter PBM 정책이 9.x vCenter 플러그인에서 안 올라옴(별건, 조사 필요). |
 | `$data` 액션 throw | 액션은 throw 금지 → `[]` 반환해야 폼이 안 깨짐(이미 적용됨). |
 | **드롭다운 무한로딩(특정 필드: projects/namespace 등)** | 그 `$data` 액션이 `Array/string`({id,name}) → 카탈로그가 UI에 줄 때 value/label 없어 못 그림. **`Array/Properties` {label,value}** 로 반환하도록 액션 수정(`new Properties(); put("label",x); put("value",x)`). |
@@ -121,7 +121,7 @@ content_publish blueprints/vm/blueprint_vm.yaml forms/vm/custom_vm.yml   # impor
 | Project | [actions/com.vmk.dk/getProjectsNames.js](../../actions/com.vmk.dk/getProjectsNames.js) |
 | Namespace | [actions/com.vmk.dk/getNameSpaces.js](../../actions/com.vmk.dk/getNameSpaces.js) |
 | VM Class | [actions/com.vmk.dk/getVMClass.js](../../actions/com.vmk.dk/getVMClass.js) |
-| VM Image | [actions/com.vmk.dk/getVMImage.js](../../actions/com.vmk.dk/getVMImage.js) (`targetLibraryName=vra-image`) |
+| VM Image | [actions/com.vmk.dk/getVMImage.js](../../actions/com.vmk.dk/getVMImage.js) (CCI `clustervirtualmachineimages`, 입력 없음) |
 | Storage Class | [actions/com.vmk.dk/getStorageClass.js](../../actions/com.vmk.dk/getStorageClass.js) |
 | OS Admin User | [actions/com.vmk.dk/getAdminUserByImage.js](../../actions/com.vmk.dk/getAdminUserByImage.js) |
 

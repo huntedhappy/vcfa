@@ -65,25 +65,25 @@ source scripts/session.sh .env.tenant
 
 ## Step 0.5 — 사전 등록 (★ 패키지에 들어있지 않음, 빠지면 드롭다운이 빈값/에러)
 
-**중요.** 아래 3개는 vRO **인벤토리 호스트 등록**이라 `.package` 안에 절대 포함되지 않습니다.
-패키지만 import 하고 이걸 건너뛰면 `$data` 액션이 **빈 배열을 반환하거나 throw** 하고,
-특히 `getVMImage` 는 vAPI 가 제공하는 `VAPIManager` 스크립팅 객체를 못 찾아 **실패**합니다.
-`VAPIManager` 는 커스텀 액션이 아니고 패키지에도 없습니다 — vAPI endpoint 등록으로만 생깁니다.
+**중요.** 아래는 vRO **인벤토리 호스트 등록**이라 `.package` 안에 절대 포함되지 않습니다.
+패키지만 import 하고 이걸 건너뛰면 `$data` 액션이 **빈 배열을 반환하거나 throw** 합니다.
+모든 `$data` 드롭다운 액션은 **VCFA:Host(CCI 프록시)** 또는 **vCenter** 만 있으면 됩니다.
+> ★ 2026-06-26: `getVMImage`·`getKRVersion` 까지 CCI 로 이전돼 **어떤 $data 액션도 vAPI(VAPIManager)를 더는 사용하지 않습니다.** `vcfa_register_vapi` 는 선택/레거시(수동 VAPIManager 용도)로만 남깁니다.
 
 ```bash
-vcfa_register_host       # VCFA:Host — getProjectsNames / getNamespaces 등의 소스
+vcfa_register_host       # VCFA:Host — getProjectsNames/getNamespaces/getVMClass/getVMImage/getKRVersion/getContentsLibrary (CCI 전부)
                          #   VCFA_HOST_API_TOKEN 있으면 connectionType="Shared Session" 자동(카탈로그 폼 동작),
                          #   없으면 "Per User Session"(직접 RUN 만 됨, 카탈로그 폼은 무한로딩). k8sApiVersion=v1alpha2.
 vcfa_register_vcenter    # 밑단 vCenter — getStorageClass 의 스토리지 정책 소스 (.env: VC_HOST/VC_USER/VC_PASS)
-vcfa_register_vapi       # vAPI endpoint + metamodel — getVMImage 의 Content Library/VM image 소스, VAPIManager 제공
+# vcfa_register_vapi     # (선택/레거시) 어떤 $data 액션도 미사용. 필요 시에만.
 ```
 
 | 등록 누락 시 증상 | 영향받는 드롭다운 |
 | --- | --- |
-| VCFA:Host 미등록 | Project / Namespace 등 전부 빈값 |
+| VCFA:Host 미등록 | Project / Namespace / VM Class / VM Image / KR Version / Contents Library 등 전부 빈값 (전부 CCI) |
 | VCFA:Host 가 `Per User Session` | 직접 RUN 은 되는데 **카탈로그 폼만 무한로딩** (서비스 컨텍스트라 per-user 세션 없음 → Shared Session 필요) |
 | vCenter 미등록 | Storage Class 빈값 |
-| vAPI 미등록 | VM Image 빈값 + `getVMImage` 가 `VAPIManager` 없어 실패 |
+| vAPI 미등록 | (영향 없음 — 더 이상 사용하는 $data 액션 없음) |
 
 > ✅ **멱등 (probe-first).** 세 헬퍼 모두 **이미 등록돼 있으면 자동 생략**합니다 — 예전처럼 `state=failed ✗` 가 뜨지 않습니다.
 > - `vcfa_register_host` : 동명 호스트가 있으면 **Update**.

@@ -371,3 +371,63 @@
 - **수정한 파일**: `scripts/vcfa-vro-package-lib.sh`, `actions/com.vmk.dk/{getVMImage,getProjectsNames,getNamespaces}.js`, `.env*.example`
 - **검증(라이브)**: Shared Session + API토큰 → getProjectsNames=`["vcfa2","default-project","vcfa1"]`, getNamespaces=`["hh-ns-zqbhb","vcfa-7f4cv"]`. (사용자 UI 폼 재확인 대기)
 - **남은 것(콘텐츠)**: getVMImage=vCenter 에 `vra-image` 라이브러리 생성 필요, getStorageClass=PBM 정책 안 옴(9.x 플러그인 호환 의심).
+
+---
+
+## 2026-06-26 — getVMImage CCI 전환 (vra-image 하드코딩 제거, VM Image 드롭다운 해결)
+
+- **상태**: DONE (라이브 검증 완료)
+- **증상**: 카탈로그 폼의 **VM Image 드롭다운이 빈값**("vm image 를 못찾네").
+- **근본 원인**: `getVMImage` 만 유일하게 옛 경로(`VAPIManager`→vCenter Content Library) + 폼/블루프린트가 `targetLibraryName=vra-image` **하드코딩**. 그런데 이 vCenter 엔 `vra-image` 라이브러리가 없음(존재: avi/Supervisor Images/Kubernetes Service/Custom Kubernetes Service/licensehub-ssp-content-lib) → `[]` 반환. 형제 액션(getVMClass/getContentsLibrary/getKRVersion 중 앞 2개)은 이미 CCI 로 이전됐는데 이것만 누락.
+- **라이브 확인 (테넌트 토큰, 읽기 전용)**:
+  - 배포 가능한 VM 이미지 = **`ClusterVirtualMachineImage`** (cluster-scoped) 27개. `metadata.name=vmi-<hash>`, `status.name=친근명`(예: `ob-25217799-ubuntu-2404-amd64-v1.35.0---vmware.2-vkr.4`). 27/27 status.name 유일.
+  - **CRD 스키마(openapi)**: `VirtualMachine.spec.imageName` 은 `vmi-오브젝트명` **또는 display name(=status.name)** 둘 다 허용(display name 은 단일 식별 시 웹훅이 resolve). → 친근명을 값으로 쓰면 배포 OK + 폼 `contains: ubuntu/photon` 가시성·`getAdminUserByImage` OS추론 그대로 유지.
+  - 네임스페이스 범위 `virtualmachineimages` 와 `virtualmachines` 는 테넌트 RBAC 로 403(클러스터 이미지는 200) — cluster 목록이 전 네임스페이스 공통이라 충분.
+- **한 일**:
+  - `getVMImage.js` 재작성: `getContentsLibrary` 와 동일한 `host.createRestClient()`→CCI 프록시. 입력 없음. `…/apis/vmoperator.vmware.com/v1alpha3/clustervirtualmachineimages`(v1alpha2 폴백), label=value=`status.name`. 모든 오류 경로 `return []`.
+  - 폼 2개(`custom_vm.yml`, `custom_vm_storageclass_manual.yml`) `image.valueList.parameters` → `[]`. 블루프린트 2개 `$data: …/getVMImage`(쿼리 제거).
+  - 문서 정리: deploy.md/clean-reupload.md/context.md/api-reference-guide.md/clean-deploy.sh 에서 "getVMImage=vAPI/`vra-image`" 표기 제거. **vAPI(VAPIManager) 의 유일한 잔여 사용자는 `getKRVersion`(클러스터 블루프린트)** 로 정정.
+- **수정한 파일**: `actions/com.vmk.dk/getVMImage.js`, `forms/vm/{custom_vm,custom_vm_storageclass_manual}.yml`, `blueprints/vm/{blueprint_vm,blueprint_vm_storageclass_manual}.yaml`, `docs/{context.md,api-reference-guide.md,runbooks/deploy.md,runbooks/clean-reupload.md}`, `scripts/clean-deploy.sh`
+- **검증 (라이브)**: 새 시그니처(Array/Properties, 입력 없음)로 `vco_import_action` PUT 200 → `vco_run_action com.vmk.dk/getVMImage` = **27개 이미지 반환**(정렬된 친근명 목록).
+- **중복 방지 메모**: VM Image 소스는 이제 **CCI clustervirtualmachineimages**(vAPI/Content Library 아님). 빈값이면 VCFA:Host/토큰 점검. import 는 `vco_import_action … Array/Properties '[]'`.
+
+---
+
+## 2026-06-26 (이어서) — getKRVersion 도 CCI 전환 → vAPI(VAPIManager) 의존 완전 제거
+
+- **상태**: DONE (라이브 검증 완료)
+- **배경**: 위에서 getVMImage CCI 전환 후, vAPI 의 유일한 잔여 사용자가 `getKRVersion` 뿐이었음. 사용자 요청("진행해줘")으로 마저 이전.
+- **사전 비교(안전 확인)**: `clustervirtualmachineimages`.status.name 에서 vkr 패턴 추출 결과 = 현재 라이브 getKRVersion(VAPIManager) 출력과 **8개 완전 동일**(v1.32.10~v1.35.2). → 결과 불변, 안전.
+- **한 일**:
+  - `getKRVersion.js` 재작성: getVMImage 와 동일 CCI 패턴(host.createRestClient → `…/vmoperator.vmware.com/v1alpha3/clustervirtualmachineimages`, v1alpha2 폴백). status.name 에서 `v\d+\.\d+\.\d+---vmware\.\d+(-fips)?-vkr\.\d+` 추출·dedup, label=`vX.Y.Z`/value=full, 버전 오름차순. **시그니처(ProjectName,NamespaceName 입력)는 보존** → 클러스터 블루프린트 `$data` 바인딩 무수정.
+  - 문서 재정정: clean-reupload.md/deploy.md/clean-deploy.sh — "vAPI=getKRVersion" → **어떤 $data 액션도 vAPI 미사용**, `vcfa_register_vapi` 는 선택/레거시로 강등(호출은 `|| true`).
+- **수정한 파일**: `actions/com.vmk.dk/getKRVersion.js`, `docs/runbooks/{clean-reupload.md,deploy.md}`, `scripts/clean-deploy.sh`
+- **검증 (라이브)**: `vco_import_action`(Array/Properties + ProjectName/NamespaceName) PUT 200 → `vco_run_action getKRVersion (ProjectName=default-project NamespaceName=vcfa-7f4cv)` = **8개**, 무인자 호출도 8개. 기존 출력과 동일.
+- **블루프린트/폼 라이브 동기화(미실행, 선택)**: getVMImage 폼/블루프린트의 `targetLibraryName=vra-image` 제거분은 **재배포 없이도 라이브 정상**(라이브 액션이 미선언 파라미터 무시 → 옛 바인딩으로 호출해도 27개 반환 검증). 메타데이터 정리(옛 param 제거)는 `content_publish` 로 재배포 시 반영되나, 블루프린트 삭제·재생성이라 보류. 필요 시 `content_publish blueprints/vm/blueprint_vm.yaml forms/vm/custom_vm.yml`.
+- **중복 방지 메모**: 이제 `VAPIManager` 실사용 액션 0개(코드의 'VAPIManager' 문자열은 getKRVersion 주석의 이전이력뿐). vAPI 등록 불필요.
+
+---
+
+## 2026-06-26 (이어서3) — 클러스터 OS Image: 네이티브식 "버전→OS이미지(라이브러리 포함)" 캐스케이드
+
+- **상태**: DONE (라이브 재배포 + 카탈로그 폼-컨텍스트 end-to-end 검증 완료).
+- **요구**: 네이티브 클러스터 UI 의 OS Image 드롭다운(예 "Ubuntu 22.04 - Custom Kubernetes Service")처럼, KR 버전 선택 → 그 버전의 OS 이미지(라이브러리 구분 포함) 선택. windows=worker 전용.
+- **핵심 발견 (라이브, 사용자 지적이 맞았음 — "vcfa는 잘 가져오던대")**:
+  - clustervirtualmachineimages(27)는 전부 service 라벨이 `kubernetes.vmware.com` 라 라이브러리 구분 불가로 보였으나,
+  - **`run.tanzu.vmware.com/v1alpha3/osimages`(OSImage)** 가 진짜 권위 소스. 라벨에 `content-library`(cl- id), `os-name`, `os-version`, `run.tanzu.vmware.com/kubernetesVersion` 보유.
+  - content-library cl- 2종: `cl-06403f0697ec9b5c6`=**Kubernetes Service**(22), `cl-6bbf73cdd40a364df`=**Custom Kubernetes Service**(5). → Custom 도 자동화로 접근 가능(네이티브와 동일 재현).
+  - namespace 범위 `virtualmachineimages` 는 테넌트·vRO 호스트 모두 403(불가). osimages 는 cluster-scoped 라 200.
+  - join: getKRVersion 값에서 `-vkr.N` 제거 → OSImage `kubernetesVersion` 라벨과 일치(v1.35.2---vmware.1-vkr.3 → v1.35.2---vmware.1).
+- **한 일**:
+  - 신규 액션 **`getOSImageByKR.js`** (입력 krVersion, role). osimages → KR 필터 → 라벨 `"{OS} {ver} - {라이브러리}"`, **값 = resolve-os-image 셀렉터**(`os-name=…, content-library=cl-…[, os-version=…]`). role!=worker 면 windows 제외. cl→라이브러리명은 clustercontentlibraries 로 매핑.
+  - 신규 **`getKRVersionManual.js`** (정적 KR 목록, 손편집용. getOS.js 식). 현재 8개 시드.
+  - 클러스터 블루프린트/폼: 3필드(os/ubuntu_version/contents_library) → **OS Image 2필드(os_image_cp / os_image_worker)** 로 교체. CP=role controlplane(windows 제외), worker=role worker(windows 포함), 둘 다 `krVersion={{kr_version}}` 캐스케이드. `resolve-os-image` 는 CP=`${input.os_image_cp}`, worker 2풀=`input.os_image_worker`.
+  - 임시 프로브 `dumpVMImages` repo·live 정리(DELETE 200).
+- **수정/생성 파일**: `actions/com.vmk.dk/{getOSImageByKR,getKRVersionManual}.js`(신규), `blueprints/cluster/blueprint_vra_cluster.yaml`, `forms/cluster/custom_cluster.yml`
+- **검증 (라이브)**: getOSImageByKR(POST 201). v1.35.2/controlplane=6개(스크린샷과 일치, Custom 포함), worker=+Windows 2022, v1.34.2=3개(custom 빌드 없음). getKRVersionManual=8개.
+- **재배포 (DONE)**: tenant 세션(`source .env.tenant`+login) + `VCFA_BP_RECREATE=1` 로 `content_publish blueprints/cluster/blueprint_vra_cluster.yaml forms/cluster/custom_cluster.yml`. 옛 vra_cluster 삭제→재생성(id a613fe93…)→폼 set(4p)→release(v20260626.121750)→catalog(6c35e2ef…).
+  - ★ provider(.env)로는 `_remote_guard`/RBAC 막힘 — **블루프린트/폼/카탈로그 publish 는 tenant(.env.tenant) 세션 필수**. 구조변경이라 update 아닌 RECREATE 필요(stale $data 인덱스 방지).
+- **검증 (라이브, 블루프린트 data 엔드포인트=카탈로그 폼 경로)**: KR 8개 / os_image_cp(controlplane)=6개·windows 없음·Custom 포함(스크린샷 일치) / os_image_worker(worker)=+Windows 2022.
+- **레이아웃 조정 (DONE, 재배포)**: KR Version 을 페이지1(기본설정)에서 → 페이지3 "8. Kubernetes / OS Image" 섹션 **맨 위**로 이동(그 아래 CP/Worker OS Image). 캐스케이드 의존(version→OS)대로 버전을 먼저 고르게. 클러스터 버전 1개가 CP·Worker OS Image 둘을 동시에 필터하므로 version-first 가 정답(OS-first 면 두 OS 와 호환되는 버전 교집합이라 복잡). 재배포 release v20260626.122407.
+- **남은 것**: 사용자 UI 폼 최종 육안 확인. getOS·getUbuntuVersion·getContentsLibrary 는 클러스터 폼 미사용(액션 파일 보존).
+- **중복 방지 메모**: OS 이미지/라이브러리/버전 권위 소스 = **OSImage(run.tanzu.vmware.com)**, NOT clustervirtualmachineimages(라이브러리 구분 불가)·NOT namespaced VMI(403). resolve-os-image 셀렉터 형식: ubuntu 만 os-version 포함.

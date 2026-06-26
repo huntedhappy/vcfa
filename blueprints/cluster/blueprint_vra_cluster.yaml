@@ -71,18 +71,16 @@ inputs:
     type: string
     title: SSH Public Key
     default: ''
-  contents_library:
+  os_image_cp:
     type: string
-    title: Contents Library
-    $data: /data/vro-actions/com.vmk.dk/getContentsLibrary
-  os:
+    title: Control Plane OS Image
+    description: 'KR Version 선택 후 노출. 값 = resolve-os-image 셀렉터(os-name+content-library[+os-version]). windows 제외.'
+    $data: /data/vro-actions/com.vmk.dk/getOSImageByKR?krVersion={{kr_version}}&role=controlplane
+  os_image_worker:
     type: string
-    title: Ubuntu || Photon || Windows
-    $data: /data/vro-actions/com.vmk.dk/getOS
-  ubuntu_version:
-    type: string
-    title: Ubuntu Version 24.04 || 22.04
-    $data: /data/vro-actions/com.vmk.dk/getUbuntuVersion?os={{os}}
+    title: Worker OS Image
+    description: 'KR Version 선택 후 노출. worker 전용이라 windows 포함.'
+    $data: /data/vro-actions/com.vmk.dk/getOSImageByKR?krVersion={{kr_version}}&role=worker
   trust_enabled:
     type: boolean
     title: Trust CA Enabled
@@ -190,7 +188,7 @@ resources:
               name: ${input.guestcluster}-${substring(replace(uuid(), "-", ""), 0, 4)}
               metadata:
                 annotations:
-                  run.tanzu.vmware.com/resolve-os-image: '${"os-name=" + input.os + ", content-library=" + input.contents_library + ((input.os == "ubuntu") ? ", os-version=" + input.ubuntu_version : "")}'
+                  run.tanzu.vmware.com/resolve-os-image: '${input.os_image_cp}'
               variables:
                 overrides:
                   - name: vmClass
@@ -203,8 +201,8 @@ resources:
                         capacity: ${input.master_disk_size}Gi
             workers:
               machineDeployments: '${from_json("[" +
-                "{\"class\":\"node-pool\",\"name\":\"worker-node-1-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"replicas\":" + input.worker_count + ",\"metadata\":{\"annotations\":{\"run.tanzu.vmware.com/resolve-os-image\":\"" + ("os-name=" + input.os + ", content-library=" + input.contents_library + ((input.os == "ubuntu") ? ", os-version=" + input.ubuntu_version : "")) + "\"}},\"variables\":{\"overrides\":[{\"name\":\"vmClass\",\"value\":\"" + input.vmclass_worker + "\"},{\"name\":\"volumes\",\"value\":[{\"name\":\"vol-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"mountPath\":\"/var/lib/containerd\",\"storageClass\":\"" + input.storageclass + "\",\"capacity\":\"" + input.worker_disk_size + "Gi\"}]}]}}" +
-                (input.enable_second_nodepool ? ",{\"class\":\"node-pool\",\"name\":\"worker-node-2-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"replicas\":" + input.worker_count2 + ",\"metadata\":{\"annotations\":{\"run.tanzu.vmware.com/resolve-os-image\":\"" + ("os-name=" + input.os + ", content-library=" + input.contents_library + ((input.os == "ubuntu") ? ", os-version=" + input.ubuntu_version : "")) + "\"}},\"variables\":{\"overrides\":[{\"name\":\"vmClass\",\"value\":\"" + input.vmclass_worker2 + "\"},{\"name\":\"volumes\",\"value\":[{\"name\":\"vol-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"mountPath\":\"/var/lib/containerd\",\"storageClass\":\"" + input.storageclass + "\",\"capacity\":\"" + input.worker_disk_size2 + "Gi\"}]}]}}" : "") +
+                "{\"class\":\"node-pool\",\"name\":\"worker-node-1-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"replicas\":" + input.worker_count + ",\"metadata\":{\"annotations\":{\"run.tanzu.vmware.com/resolve-os-image\":\"" + input.os_image_worker + "\"}},\"variables\":{\"overrides\":[{\"name\":\"vmClass\",\"value\":\"" + input.vmclass_worker + "\"},{\"name\":\"volumes\",\"value\":[{\"name\":\"vol-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"mountPath\":\"/var/lib/containerd\",\"storageClass\":\"" + input.storageclass + "\",\"capacity\":\"" + input.worker_disk_size + "Gi\"}]}]}}" +
+                (input.enable_second_nodepool ? ",{\"class\":\"node-pool\",\"name\":\"worker-node-2-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"replicas\":" + input.worker_count2 + ",\"metadata\":{\"annotations\":{\"run.tanzu.vmware.com/resolve-os-image\":\"" + input.os_image_worker + "\"}},\"variables\":{\"overrides\":[{\"name\":\"vmClass\",\"value\":\"" + input.vmclass_worker2 + "\"},{\"name\":\"volumes\",\"value\":[{\"name\":\"vol-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"mountPath\":\"/var/lib/containerd\",\"storageClass\":\"" + input.storageclass + "\",\"capacity\":\"" + input.worker_disk_size2 + "Gi\"}]}]}}" : "") +
                 "]")}'
   Secret_1:
     type: CCI.Supervisor.Resource

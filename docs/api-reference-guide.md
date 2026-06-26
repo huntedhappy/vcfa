@@ -226,12 +226,13 @@ curl -sk -X PUT \
   "${VCO_API_BASE}/actions/${ACTION_ID}" \
   -w "\nHTTP_STATUS=%{http_code}\n"
 
-## 입력 파라미터가 있는 액션의 JSON body 예 (getVMImage.js)
+## 입력 파라미터가 있는 액션의 JSON body 예 (getAdminUserByImage.js)
+# 참고: getVMImage 는 입력 없음으로 변경됨(CCI clustervirtualmachineimages). 아래는 입력 있는 액션 예시.
 jq -n \
-  --rawfile script actions/com.vmk.dk/getVMImage.js \
-  '{name:"getVMImage", module:"com.vmk.dk", version:"1.0.0",
-    "output-type":"Array/Properties",
-    "input-parameters":[{"name":"targetLibraryName","type":"string","description":""}],
+  --rawfile script actions/com.vmk.dk/getAdminUserByImage.js \
+  '{name:"getAdminUserByImage", module:"com.vmk.dk", version:"1.0.0",
+    "output-type":"string",
+    "input-parameters":[{"name":"imageName","type":"string","description":""}],
     script:$script}' \
   > /tmp/action-body.json
 

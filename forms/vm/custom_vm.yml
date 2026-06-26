@@ -691,11 +691,7 @@ schema:
     valueList:
       id: /data/vro-actions/com.vmk.dk/getVMImage
       type: dynamic
-      parameters:
-        - $type:
-            dataType: string
-            isMultiple: false
-          targetLibraryName: '`vra-image`'
+      parameters: []
       isPageable: false
     constraints:
       required: true

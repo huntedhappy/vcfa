@@ -45,7 +45,7 @@
 - `getProjectsNames` — VCFA 프로젝트 목록
 - `getNamespaces` — 프로젝트별 네임스페이스
 - `getVMClass` — VM Class 목록
-- `getVMImage` — VM 이미지 목록 (`targetLibraryName` 파라미터)
+- `getVMImage` — VM 이미지 목록 (CCI `clustervirtualmachineimages` 의 display name, 입력 없음)
 - `getStorageClass` / `getStroageClassManual` / `getStroageClassManualOptionals` — 스토리지 클래스
 - `getAdminUserByImage` — 이미지별 기본 OS admin 사용자
 

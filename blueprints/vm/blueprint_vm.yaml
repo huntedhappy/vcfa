@@ -53,7 +53,7 @@ inputs:
   image:
     type: string
     title: VM Image
-    $data: /data/vro-actions/com.vmk.dk/getVMImage?targetLibraryName=vra-image
+    $data: /data/vro-actions/com.vmk.dk/getVMImage
   storageclass:
     type: string
     title: OS Disk Storage Class

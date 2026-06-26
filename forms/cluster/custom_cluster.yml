@@ -28,13 +28,6 @@ layout:
               state:
                 visible: true
                 read-only: false
-        - id: 4. Kubernetes (쿠버네티스)
-          fields:
-            - id: kr_version
-              display: dropDown
-              state:
-                visible: true
-                read-only: false
       title: 1. 기본 설정
     - id: page_nodes
       sections:
@@ -111,26 +104,23 @@ layout:
       title: 2. 노드 구성
     - id: page_os
       sections:
-        - id: 8. OS / Image (OS·이미지)
+        - id: 8. Kubernetes / OS Image (쿠버네티스·OS 이미지)
           fields:
-            - id: contents_library
+            - id: kr_version
               display: dropDown
               state:
                 visible: true
                 read-only: false
-            - id: os
+            - id: os_image_cp
               display: dropDown
               state:
                 visible: true
                 read-only: false
-            - id: ubuntu_version
+            - id: os_image_worker
               display: dropDown
               state:
+                visible: true
                 read-only: false
-                visible:
-                  - equals:
-                      os: ubuntu
-                    value: true
         - id: 9. NTP / SSH
           fields:
             - id: ntpserver
@@ -335,45 +325,52 @@ schema:
     type:
       dataType: boolean
       isMultiple: false
-  contents_library:
-    label: Contents Library
-    type:
-      dataType: string
-      isMultiple: false
-    valueList:
-      id: /data/vro-actions/com.vmk.dk/getContentsLibrary
-      type: dynamic
-      parameters: []
-    placeholder: Content Library를 선택 하세요
-  os:
-    label: Ubuntu || Photon || Windows
+  os_image_cp:
+    label: Control Plane OS Image
+    description: KR Version 을 먼저 선택하세요. 그 버전의 OS 이미지만 표시됩니다(windows 제외).
+    signpost: KR Version 을 먼저 선택하세요. 그 버전의 OS 이미지만 표시됩니다(windows 제외).
     type:
       dataType: string
       isMultiple: false
     default: ''
     valueList:
-      id: /data/vro-actions/com.vmk.dk/getOS
-      type: dynamic
-      parameters: []
-    placeholder: OS를 선택하세요
-    constraints:
-      required: true
-  ubuntu_version:
-    label: Ubuntu Version 24.04 || 22.04
-    type:
-      dataType: string
-      isMultiple: false
-    default: ''
-    valueList:
-      id: /data/vro-actions/com.vmk.dk/getUbuntuVersion
+      id: /data/vro-actions/com.vmk.dk/getOSImageByKR
       type: dynamic
       parameters:
         - $type:
             dataType: string
             isMultiple: false
-          os: os
+          krVersion: kr_version
+        - $type:
+            dataType: string
+            isMultiple: false
+          role: '`controlplane`'
       isPageable: false
-    placeholder: 버전을 선택하세요
+    placeholder: KR Version 선택 후 OS 이미지를 고르세요
+    constraints:
+      required: true
+  os_image_worker:
+    label: Worker OS Image
+    description: KR Version 의 OS 이미지(worker 전용이라 windows 포함).
+    signpost: KR Version 의 OS 이미지(worker 전용이라 windows 포함).
+    type:
+      dataType: string
+      isMultiple: false
+    default: ''
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getOSImageByKR
+      type: dynamic
+      parameters:
+        - $type:
+            dataType: string
+            isMultiple: false
+          krVersion: kr_version
+        - $type:
+            dataType: string
+            isMultiple: false
+          role: '`worker`'
+      isPageable: false
+    placeholder: KR Version 선택 후 OS 이미지를 고르세요
     constraints:
       required: true
   trust_enabled:
