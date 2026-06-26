@@ -74,6 +74,8 @@ content_publish blueprints/vm/blueprint_vm.yaml forms/vm/custom_vm.yml   # impor
 | VM Image 드롭다운 비어있음 | vCenter 에 `vra-image` Content Library 가 없음 → 생성하거나 폼의 `targetLibraryName` 을 실제 라이브러리명으로 변경. |
 | Storage Class 가 `k8s` 만 | vCenter PBM 정책이 9.x vCenter 플러그인에서 안 올라옴(별건, 조사 필요). |
 | `$data` 액션 throw | 액션은 throw 금지 → `[]` 반환해야 폼이 안 깨짐(이미 적용됨). |
+| **드롭다운 무한로딩(특정 필드: projects/namespace 등)** | 그 `$data` 액션이 `Array/string`({id,name}) → 카탈로그가 UI에 줄 때 value/label 없어 못 그림. **`Array/Properties` {label,value}** 로 반환하도록 액션 수정(`new Properties(); put("label",x); put("value",x)`). |
+| **데이터는 200으로 오는데 모든 드롭다운 무한로딩** | 백엔드/형식 다 정상(pod 로그·HAR이 200)이면 **브라우저 UI 렌더링** 문제. ① 다른 브라우저(Firefox/Edge)로 시도, ② F12 → **Console** 탭의 빨간 JS 에러 확인(Network/HAR·pod 로그엔 안 보임). 신버전 Chrome 호환 이슈면 Broadcom 케이스. |
 
 ---
 

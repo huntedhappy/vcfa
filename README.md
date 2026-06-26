@@ -91,6 +91,11 @@ form_list ; form_check
 form_show forms/vm/custom_vm.yml
 content_pairs
 
+# vRO 액션 + 인벤토리 호스트 (최초 1회 — 드롭다운 동작 전제)
+vco_import_data_actions                                            # com.vmk.dk $data 액션 import (output-type 헤더 기반 자동)
+vcfa_register_host                                                # VCFA:Host. VCFA_HOST_API_TOKEN(UI 발급) 있으면 Shared Session → 카탈로그 폼 드롭다운 동작
+vcfa_register_vcenter ; vcfa_register_vapi                        # (선택) getStorageClass / getVMImage 데이터 소스
+
 # Blueprint + Form import (권장)
 content_publish_all                                                # 모든 운영 파일 일괄 (release 전 $data 액션 preflight 자동)
 content_publish_all --include-archive                              # archive 포함
