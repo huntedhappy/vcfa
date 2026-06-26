@@ -24,26 +24,28 @@ form_show forms/vm/custom_vm.yml  # pages → sections → fields 트리
 content_pairs                     # blueprint ↔ form 매칭 자동 추측 표
 ```
 
-## Import — REST 자동화 (권장, 검증 완료 2026-05-24)
+## Import — REST 자동화 (권장)
 
-전제: 짝 blueprint 가 이미 release 된 상태여야 함 (catalog item 이 있어야 sourceId 로 쓰임).
+### ★ VCF Automation 9.x 에서 폼은 *블루프린트에* set 한다 (2026-06-26 검증)
+
+카탈로그 요청 폼은 **블루프린트에 붙은 폼**(`POST /blueprint/api/blueprints/{bpId}/form`)을 씁니다. 그리고 **그 폼은 release 前에 set 해야** 카탈로그 item 이 가져갑니다. 그래서 순서는 **import → 폼 set → release**.
 
 ```bash
-catalog_remote_list                                                 # ITEM_ID 확인
-form_remote_import forms/vm/custom_vm.yml <ITEM_ID>                 # form 적용 (formFormat=YAML)
-# 삭제:
-form_remote_delete <form-id>
+source scripts/session.sh .env.tenant
+content_publish blueprints/vm/blueprint_vm.yaml forms/vm/custom_vm.yml   # import → bp_set_form → release (한 방)
+# 또는 단계별:
+#   bp_remote_import blueprints/vm/blueprint_vm.yaml
+#   bp_set_form "$VCFA_BP_ID" forms/vm/custom_vm.yml      # ← release 前!
+#   bp_remote_release
 ```
 
-서버는 `form` 필드를 YAML 문자열로 받음 (`formFormat:"YAML"`). 사용자가 yq 로 미리 JSON 변환할 필요 없음.
+검증(카탈로그가 실제 서빙하는 폼):
+```bash
+# /catalog/api/items/<ITEM_ID>/versions/<V>/form 의 .form 안 layout.pages 가 커스텀 폼이면 OK
+```
 
-### ⚠️ 재import = "삭제 후 재생성" 이어야 함 (중요, 2026-06-25 검증)
-
-`POST /form-service/api/forms` 는 **같은 catalog item 에 폼이 이미 있으면 교체하지 않고 무시**합니다 (201 OK 를 줘도 기존 폼이 그대로 바인딩됨). 그래서 폼을 수정한 뒤 그냥 다시 import 하면 **변경이 반영되지 않습니다.**
-
-- `form_remote_import` 는 이제 **내부에서 기존 폼을 먼저 삭제한 뒤 재생성**하므로 그냥 호출하면 됩니다(`기존 폼 삭제(교체): <id>` 로그가 보이면 정상).
-- 수동(UI/curl)으로 할 땐 반드시 `form_remote_delete <기존 form-id>` → `form_remote_import` 순서로.
-- 확인: `fetchBySourceAndType?formType=requestForm&sourceId=<ITEM_ID>&sourceType=com.vmw.blueprint` 의 `id` 가 바뀌면 교체된 것.
+> **`form_remote_import`(form-service, `/form-service/api/forms`) 는 9.x 카탈로그가 쓰지 않습니다** — 거기 넣어도 카탈로그엔 안 보입니다(vRA 8.x Service Broker 잔재). `bp_set_form`/`content_publish` 를 쓰세요.
+> 폼을 수정했으면 **반드시 다시 `content_publish`**(폼 set → 재release) 해야 반영됩니다. release 後에 폼만 바꾸면 카탈로그는 옛 release 의 폼을 계속 서빙합니다.
 
 > 참고: 폼 내용이 이미 맞다면(=리포와 동일) 재생성해도 `form` 길이는 같습니다. **카탈로그 드롭다운이 무한로딩이면 폼/import 문제가 아니라** vRO 데이터소스 평가(호스트 세션·VCFA↔vRO 통합) 문제이니 [../docs/runbooks/deploy.md](../docs/runbooks/deploy.md) 트러블슈팅 표 참조.
 

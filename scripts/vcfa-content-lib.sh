@@ -803,6 +803,39 @@ form_remote_delete() {
 # All-in-one — blueprint import → release → form (한 줄로)
 # ============================================================
 
+# Usage: bp_set_form <blueprint-id> <form-file> [bp-name]
+#   커스텀 폼을 *블루프린트에* set — VCF Automation 9.x 카탈로그가 실제로 쓰는 곳.
+#   ★ 반드시 release 前에 호출해야 카탈로그 item 이 이 폼을 가져감.
+#   (form-service 의 form_remote_import 는 9.x 카탈로그가 안 씀 — 그쪽은 무시됨.)
+bp_set_form() {
+  local bpid="${1:?Usage: bp_set_form <blueprint-id> <form-file> [bp-name]}"
+  local f="${2:?form-file 필요}"
+  local name="${3:-}"
+  [[ -f "$f" ]] || { echo "ERROR: form file not found: $f" >&2; return 1; }
+  _remote_guard || return 1
+  require_cmd yq || return 1
+  require_cmd jq || return 1
+  if [[ -z "$name" ]]; then
+    name=$(curl -sk -H "Authorization: Bearer ${TOKEN}" -H "Accept: application/json" \
+      "https://${VCFA_FQDN}/blueprint/api/blueprints/${bpid}?apiVersion=2020-08-25" | jq -r '.name // empty')
+  fi
+  local formjson; formjson=$(yq eval -o=json -I=0 "$f") \
+    || { echo "ERROR: form YAML→JSON 변환 실패: $f" >&2; return 1; }
+  local body; body=$(jq -n --arg name "$name" --arg id "$bpid" --arg form "$formjson" \
+    '{name:$name, type:"requestForm", sourceId:$id, sourceType:"com.vmw.blueprint", status:"ON", styles:null, form:$form}')
+  local resp; resp=$(mktemp /tmp/bp-setform.XXXXXX); local code
+  code=$(curl -sk -o "$resp" -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" -H "Accept: application/json" \
+    -d "$body" "https://${VCFA_FQDN}/blueprint/api/blueprints/${bpid}/form?apiVersion=2020-08-25")
+  if [[ "$code" != "200" && "$code" != "201" ]]; then
+    echo "ERROR: blueprint form set HTTP=$code" >&2
+    jq . "$resp" 2>/dev/null >&2 || cat "$resp" >&2
+    rm -f "$resp"; return 1
+  fi
+  rm -f "$resp"
+  echo "OK: 블루프린트 폼 set — bp=${name} pages=$(yq eval '.layout.pages | length' "$f") (release 후 카탈로그 반영)"
+}
+
 content_publish() {
   # Usage: content_publish <blueprint.yaml> [form.yml] [bp-name]
   # blueprint 만 주면 release 까지. form 도 주면 form 적용까지.
@@ -822,18 +855,19 @@ content_publish() {
     bp_remote_import "$bp" || return 1
   fi
 
-  echo ""
-  echo "[2/3] release + catalog 등록"
-  bp_remote_release || return 1
-
+  # ★ 폼은 release 前에 *블루프린트에* set 해야 카탈로그가 가져감 (9.x). form-service 아님.
   if [[ -n "$form" ]]; then
     echo ""
-    echo "[3/3] form 적용"
-    form_remote_import "$form" || return 1
+    echo "[2/3] 블루프린트에 커스텀 폼 set (release 前)"
+    bp_set_form "$VCFA_BP_ID" "$form" "${name:-}" || return 1
   else
     echo ""
-    echo "[3/3] form 생략"
+    echo "[2/3] form 생략"
   fi
+
+  echo ""
+  echo "[3/3] release + catalog 등록 (폼 포함)"
+  bp_remote_release || return 1
 
   echo ""
   echo "=== 완료 ==="
