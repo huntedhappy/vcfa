@@ -171,7 +171,7 @@ vco_import_package() {
 # - vco_get_action_id MODULE NAME           : 있으면 UUID, 없으면 빈 문자열
 # - vco_import_action FILE MODULE [OUT [IN]]: 신규 POST / 기존 PUT 자동
 # - vco_import_all_js DIR MODULE            : 디렉터리의 모든 *.js 를 기본값(out=Any, inputs=[])으로 import
-# ※ Python 액션(.js 안에 'def handler') 은 자동 감지 → runtime=${VCO_PY_RUNTIME:-python:3.10} 로 import.
+# ※ Python 액션(.js 안에 'def handler') 은 자동 감지 → runtime=${VCO_PY_RUNTIME:-python:3.11} 로 import.
 #   런타임 문자열이 환경과 다르면 import 가 4xx → VCO_PY_RUNTIME 로 덮어쓰기 (확인 필요).
 # ※ output-type / input-parameters 가 명시 필요한 액션은 vco_import_action 으로 인자 명시.
 # ============================================================
@@ -222,7 +222,7 @@ vco_import_action() {
   #     '[{"name":"ProjectName","type":"string","description":""}]'
   #   # Python 액션은 runtime 자동 감지 (def handler) — 5번째 인자로 덮어쓰기 가능:
   #   vco_import_action actions/com.vmk.dk/ChangePasswordHash.js com.vmk.dk string \
-  #     '[{"name":"passwd","type":"string","description":""}]' python:3.10
+  #     '[{"name":"passwd","type":"string","description":""}]' python:3.11
   local file="${1:?Usage: vco_import_action FILE MODULE [OUTPUT_TYPE] [INPUT_PARAMS_JSON] [RUNTIME]}"
   local module="${2:?module required (e.g., com.vmk.dk)}"
   local out_type="${3:-Any}"
@@ -235,7 +235,7 @@ vco_import_action() {
   # Python 액션 자동 감지 (.js 확장자라도 'def handler(' 이면 polyglot python).
   # 명시 runtime 이 없을 때만 적용. JS 는 runtime 미설정(서버 기본 JavaScript) 유지.
   if [[ -z "$runtime" ]] && grep -q 'def handler' "$file"; then
-    runtime="${VCO_PY_RUNTIME:-python:3.10}"
+    runtime="${VCO_PY_RUNTIME:-python:3.11}"
   fi
 
   local fname; fname="$(basename "$file")"
