@@ -634,6 +634,14 @@ vcfa_register_vcenter() {
   : "${VC_USER:?ERROR: VC_USER 없음}"
   : "${VC_PASS:?ERROR: VC_PASS 없음}"
   local port="${VC_PORT:-443}"; local ignore="${VC_IGNORE_CERT:-true}"
+  # probe-first: 이미 등록돼 있으면 생략 — Add 전용 워크플로라 중복 등록 시 state=failed. (VCFA_FORCE_REGISTER=1 로 강제 재등록)
+  if [[ "${VCFA_FORCE_REGISTER:-0}" != "1" ]]; then
+    local _b; _b=$(_vco_base) || return 1
+    local _n; _n=$(curl -sk -H "Authorization: Bearer ${TOKEN}" -H "Accept: application/json" \
+      "${_b}/catalog/VC/SdkConnection" \
+      | jq -r --arg h "$VC_HOST" '[(.relations.link // .link // [])[]? | (.attributes // [] | from_entries).name | select(test($h))] | length' 2>/dev/null)
+    if [[ "${_n:-0}" -gt 0 ]]; then echo "vCenter 이미 등록됨 (${VC_HOST}) — Add 생략."; return 0; fi
+  fi
   echo "vCenter 등록 시도: host=${VC_HOST}:${port} user=${VC_USER} sessionPerUser=false"
   local params; params=$(jq -n --arg host "$VC_HOST" --arg user "$VC_USER" --arg pass "$VC_PASS" \
     --argjson port "$port" --argjson ignore "$ignore" '
@@ -659,6 +667,14 @@ vcfa_register_vapi() {
   : "${VC_PASS:?ERROR: VC_PASS 없음}"
   local url="${VAPI_ENDPOINT_URL:-https://${VC_HOST:?ERROR: VC_HOST 또는 VAPI_ENDPOINT_URL 필요}/api}"
   local ignore="${VC_IGNORE_CERT:-true}"
+  # probe-first: 이미 등록돼 있으면 endpoint+metamodel 둘 다 생략 — Add 전용이라 중복 시 failed. (VCFA_FORCE_REGISTER=1 로 강제)
+  if [[ "${VCFA_FORCE_REGISTER:-0}" != "1" ]]; then
+    local _b; _b=$(_vco_base) || return 1
+    local _n; _n=$(curl -sk -H "Authorization: Bearer ${TOKEN}" -H "Accept: application/json" \
+      "${_b}/catalog/VAPI/VAPIEndpoint" \
+      | jq -r --arg u "$url" '[(.relations.link // .link // [])[]? | (.attributes // [] | from_entries).name | select(. == $u)] | length' 2>/dev/null)
+    if [[ "${_n:-0}" -gt 0 ]]; then echo "vAPI endpoint 이미 등록됨 (${url}) — Add/metamodel 생략."; return 0; fi
+  fi
   echo "vAPI endpoint 등록 시도: url=${url} user=${VC_USER}"
   local params; params=$(jq -n --arg url "$url" --arg user "$VC_USER" --arg pass "$VC_PASS" --argjson ignore "$ignore" '
     [ {name:"endpointUrl",              type:"string",       value:{string:{value:$url}}},

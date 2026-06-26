@@ -408,7 +408,7 @@ bp_remote_import() {
   # blueprint name 은 unique 가 아니라서, 무조건 POST 하면 실행할 때마다 동일 이름이 중복 생성됨.
   # → 목록 조회 후 같은 이름이 있으면 그 id 로 PUT(update). 같은 project 우선, 여러 개면 최신 것.
   local existing; existing=$(mktemp /tmp/bp-find.XXXXXX)
-  local existing_id="" n_match=0
+  local existing_id="" n_match=0 sameproj_ids=""
   if vcfa_api_get "https://${VCFA_FQDN}/blueprint/api/blueprints?page=0&size=200" > "${existing}" 2>/dev/null; then
     n_match=$(jq --arg name "$name" '[.content[]? | select(.name == $name)] | length' "${existing}")
     existing_id=$(jq -r --arg name "$name" --arg pid "$pid" '
@@ -416,10 +416,36 @@ bp_remote_import() {
       | (($byname | map(select(.projectId == $pid))) | if length > 0 then . else $byname end)
       | sort_by(.updatedAt // .createdAt // "") | last | .id // ""
     ' "${existing}")
+    sameproj_ids=$(jq -r --arg name "$name" --arg pid "$pid" '[.content[]? | select(.name==$name and .projectId==$pid) | .id] | .[]' "${existing}" 2>/dev/null)
   fi
   rm -f "${existing}"
   if [[ "${n_match:-0}" -gt 1 ]]; then
     echo "WARN: 이름 '${name}' blueprint 가 ${n_match} 개 존재 → 가장 최근(${existing_id}) 갱신. 나머지 중복은 'bp_remote_delete <id>' 로 정리하세요." >&2
+  fi
+
+  # ★ recreate: VCFA_BP_RECREATE=1 이면 동명(현재 project) blueprint 를 삭제하고 새로 생성(fresh $data 인덱스).
+  #   update(PUT)는 인덱스를 새로 안 만들어 드롭다운이 stale → delete+create 로 확실히 새로 만든다.
+  #   (다른 project 의 동명 blueprint 는 건드리지 않고, 항상 현재 project 에 새로 POST 한다)
+  if [[ "${VCFA_BP_RECREATE:-0}" == "1" ]]; then
+    if [[ -n "$sameproj_ids" ]]; then
+      echo "VCFA_BP_RECREATE=1 — 동명 '${name}' (현재 project) 삭제 후 재생성:"
+      local _did
+      for _did in $sameproj_ids; do
+        printf '  - 삭제 %s ... ' "$_did"
+        if bp_remote_delete "$_did" >/dev/null 2>&1; then echo "OK"; else echo "실패(수동 확인 필요)"; fi
+      done
+    fi
+    existing_id=""   # 강제 POST(create)
+  fi
+
+  # ★ fresh 강제: VCFA_BP_CREATE_ONLY=1 이면 동명 blueprint 가 있을 때 PUT(update) 대신 에러.
+  #   update 는 $data 인덱스를 새로 안 만들어 드롭다운이 stale 상태로 남음(클린 재업로드의 핵심 함정).
+  #   주의: 이름 매칭은 *모든 project 횡단* — 다른 project 에 남은 동명 blueprint 도 걸림. (recreate 모드면 위에서 처리됨)
+  if [[ "${VCFA_BP_CREATE_ONLY:-0}" == "1" && -n "$existing_id" ]]; then
+    echo "ERROR: VCFA_BP_CREATE_ONLY=1 인데 이름 '${name}' blueprint 가 이미 존재(id=${existing_id})." >&2
+    echo "  기존을 먼저 삭제(bp_remote_delete ${existing_id})하거나, VCFA_BP_RECREATE=1 로 자동 삭제+재생성 하세요." >&2
+    echo "  (모든 project 횡단 검색이라 다른 project 에 남아 있어도 매칭됩니다.)" >&2
+    return 1
   fi
 
   # YAML → JSON-safe 문자열
@@ -660,10 +686,21 @@ form_remote_import() {
       "https://${VCFA_FQDN}/form-service/api/forms/${_existing}" >/dev/null 2>&1
   fi
 
+  # ★ 방어: layout 의 signpostPosition 키는 이 빌드에서 드롭다운 렌더링을 깨뜨림(무한 로딩).
+  #   stale 폼 파일에 남아 있어도 전송 직전 재귀 제거. (schema 의 signpost: 는 유지)
+  #   strip 위해 JSON 으로 정규화 후 formFormat=JSON 으로 전송 (form-service 는 JSON 도 수용).
+  local form_json; form_json=$(yq eval -o=json -I=0 "$f" 2>/dev/null \
+    | jq -c 'walk(if type=="object" and has("signpostPosition") then del(.signpostPosition) else . end)')
   local form_str; form_str=$(jq -Rs '.' < "$f")
   local body; body=$(mktemp /tmp/form-imp.XXXXXX)
-  jq -n --arg src "$src" --argjson form "$form_str" \
-    '{name:"default", type:"requestForm", sourceId:$src, sourceType:"com.vmw.blueprint", form:$form, formFormat:"YAML", status:"ON"}' > "$body"
+  if [[ -n "$form_json" ]]; then
+    jq -n --arg src "$src" --argjson form "$form_json" \
+      '{name:"default", type:"requestForm", sourceId:$src, sourceType:"com.vmw.blueprint", form:($form|tojson), formFormat:"JSON", status:"ON"}' > "$body"
+  else
+    # YAML→JSON 변환 실패 시 원본 그대로 전송(기존 동작 보존)
+    jq -n --arg src "$src" --argjson form "$form_str" \
+      '{name:"default", type:"requestForm", sourceId:$src, sourceType:"com.vmw.blueprint", form:$form, formFormat:"YAML", status:"ON"}' > "$body"
+  fi
 
   local hdr; hdr=$(mktemp /tmp/form-imp-hdr.XXXXXX)
   local resp; resp=$(mktemp /tmp/form-imp-resp.XXXXXX)
@@ -821,6 +858,10 @@ bp_set_form() {
   fi
   local formjson; formjson=$(yq eval -o=json -I=0 "$f") \
     || { echo "ERROR: form YAML→JSON 변환 실패: $f" >&2; return 1; }
+  # ★ 방어: layout 의 signpostPosition 키는 이 빌드에서 드롭다운 렌더링을 깨뜨림(무한 로딩).
+  #   stale 폼 파일에 남아 있어도 전송 직전 재귀 제거. (schema 의 signpost: 는 유지)
+  formjson=$(printf '%s' "$formjson" | jq -c 'walk(if type=="object" and has("signpostPosition") then del(.signpostPosition) else . end)') \
+    || { echo "ERROR: form signpostPosition strip 실패: $f" >&2; return 1; }
   local body; body=$(jq -n --arg name "$name" --arg id "$bpid" --arg form "$formjson" \
     '{name:$name, type:"requestForm", sourceId:$id, sourceType:"com.vmw.blueprint", status:"ON", styles:null, form:$form}')
   local resp; resp=$(mktemp /tmp/bp-setform.XXXXXX); local code

@@ -324,8 +324,10 @@
   2. import 헬퍼가 `runtime` 미설정 → **Python 액션 3개(ChangePasswordHash·doubleBase64·validatePasswordMatch)가 JS로 import되어 깨짐.**
 - **한 일**:
   - `vco_import_action`: `.js` 안 `def handler` 자동 감지 → `runtime=${VCO_PY_RUNTIME:-python:3.10}` (검증: 3개 모두 `runtime:python:3.10`).
+    > **[정정 2026-06-26]** 9.1 에서 `python:3.10` 단종 → 기본값 **`python:3.11`** 로 변경. 라이브/패키지 3개 모두 `python:3.11` 확인.
   - 신규 헬퍼: `vco_run_workflow`(워크플로 실행+폴링), `vcfa_register_host`(VCFA:Host 등록, .env 자동), `vco_run_action`(vRO 액션 직접 실행 REST `POST /vco/api/actions/<m>/<n>/executions`).
   - **VCFA:Host 등록** — `Add a VCF Automation Host` 워크플로. 결정타: **`connectionType="Per User Session"`** (Shared Session 은 `fetchAll Project` 실패), `k8sApiVersion=v1alpha2`. → 검증된 기본값으로 헬퍼에 박음.
+    > **[정정 2026-06-26, 이 항목은 아래 '이어서2' 로 대체됨]** 카탈로그 **폼** 드롭다운까지 되려면 **`connectionType="Shared Session"` + 지속 API 토큰(`VCFA_HOST_API_TOKEN`)** 이 정답. `Per User Session` 은 vRO 직접 RUN 만 되고 폼은 무한로딩(서비스 컨텍스트엔 per-user 세션 없음). 라이브 호스트(`vcfa-auto`)는 Shared Session 으로 정상 동작 확인. 헬퍼 기본값도 토큰 있으면 Shared Session 자동.
   - 코드 버그: getKRVersion 중복(v1.34.1) 제거, getStorageClass `|| []` 가드, getProjectsNames/getNamespaces actionable 에러문구.
 - **수정한 파일**: `scripts/vcfa-vro-package-lib.sh`, `actions/com.vmk.dk/{getProjectsNames,getNamespaces,getKRVersion,getStorageClass,ChangePasswordHash,doubleBase64,validatePasswordMatch}.js`
 - **검증 (라이브, vco_run_action 으로 실제 실행)**:

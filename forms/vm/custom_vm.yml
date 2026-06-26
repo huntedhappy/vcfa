@@ -9,13 +9,11 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: namespace
               display: dropDown
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: 2. Compute Spec (컴퓨팅 사양)
           fields:
             - id: vmclass
@@ -23,19 +21,16 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: vmCount
               display: integerField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: image
               display: dropDown
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: 3. Network Settings (네트워크 설정)
           fields:
             - id: hostname
@@ -43,25 +38,21 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: domainname
               display: textField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: dnsservers
               display: textField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: searchdomains
               display: textField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
       title: 1. 기본 설정
     - id: page_storage
       sections:
@@ -72,13 +63,11 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: enableOsDiskResize
               display: checkbox
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: osDiskSize
               display: textField
               state:
@@ -90,13 +79,11 @@ layout:
                       enableOsDiskResize: false
                     value: false
                 read-only: false
-              signpostPosition: right-middle
             - id: dataDiskCount
               display: dropDown
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: useCommonDataStorageclass
               display: checkbox
               state:
@@ -117,7 +104,6 @@ layout:
                       dataDiskCount: 4
                     value: true
                 read-only: false
-              signpostPosition: right-middle
             - id: dataDiskLayout
               display: dropDown
               state:
@@ -138,7 +124,6 @@ layout:
                       dataDiskCount: 4
                     value: true
                 read-only: false
-              signpostPosition: right-middle
             - id: commonDataStorageclass
               display: dropDown
               state:
@@ -165,7 +150,6 @@ layout:
                       useCommonDataStorageclass: false
                     value: false
                 read-only: false
-              signpostPosition: right-middle
         - id: 4-1. Data Disk 1
           fields:
             - id: dataStorageclass
@@ -191,7 +175,6 @@ layout:
                       useCommonDataStorageclass: true
                     value: false
                 read-only: false
-              signpostPosition: right-middle
             - id: dataDiskSize
               display: textField
               state:
@@ -212,7 +195,6 @@ layout:
                       dataDiskCount: 4
                     value: true
                 read-only: false
-              signpostPosition: right-middle
             - id: mountPoint
               display: textField
               state:
@@ -233,7 +215,6 @@ layout:
                       dataDiskCount: 4
                     value: true
                 read-only: false
-              signpostPosition: right-middle
             - id: fsType
               display: dropDown
               state:
@@ -254,7 +235,6 @@ layout:
                       dataDiskCount: 4
                     value: true
                 read-only: false
-              signpostPosition: right-middle
         - id: 4-2. Data Disk 2
           fields:
             - id: dataStorageclass2
@@ -280,7 +260,6 @@ layout:
                       useCommonDataStorageclass: true
                     value: false
                 read-only: false
-              signpostPosition: right-middle
             - id: dataDiskSize2
               display: textField
               state:
@@ -301,7 +280,6 @@ layout:
                       dataDiskCount: 4
                     value: true
                 read-only: false
-              signpostPosition: right-middle
             - id: mountPoint2
               display: textField
               state:
@@ -325,7 +303,6 @@ layout:
                       dataDiskLayout: merged
                     value: false
                 read-only: false
-              signpostPosition: right-middle
             - id: fsType2
               display: dropDown
               state:
@@ -349,7 +326,6 @@ layout:
                       dataDiskLayout: merged
                     value: false
                 read-only: false
-              signpostPosition: right-middle
         - id: 4-3. Data Disk 3
           fields:
             - id: dataStorageclass3
@@ -375,7 +351,6 @@ layout:
                       useCommonDataStorageclass: true
                     value: false
                 read-only: false
-              signpostPosition: right-middle
             - id: dataDiskSize3
               display: textField
               state:
@@ -396,7 +371,6 @@ layout:
                       dataDiskCount: 4
                     value: true
                 read-only: false
-              signpostPosition: right-middle
             - id: mountPoint3
               display: textField
               state:
@@ -420,7 +394,6 @@ layout:
                       dataDiskLayout: merged
                     value: false
                 read-only: false
-              signpostPosition: right-middle
             - id: fsType3
               display: dropDown
               state:
@@ -444,7 +417,6 @@ layout:
                       dataDiskLayout: merged
                     value: false
                 read-only: false
-              signpostPosition: right-middle
         - id: 4-4. Data Disk 4
           fields:
             - id: dataStorageclass4
@@ -470,7 +442,6 @@ layout:
                       useCommonDataStorageclass: true
                     value: false
                 read-only: false
-              signpostPosition: right-middle
             - id: dataDiskSize4
               display: textField
               state:
@@ -491,7 +462,6 @@ layout:
                       dataDiskCount: 4
                     value: true
                 read-only: false
-              signpostPosition: right-middle
             - id: mountPoint4
               display: textField
               state:
@@ -515,7 +485,6 @@ layout:
                       dataDiskLayout: merged
                     value: false
                 read-only: false
-              signpostPosition: right-middle
             - id: fsType4
               display: dropDown
               state:
@@ -539,7 +508,6 @@ layout:
                       dataDiskLayout: merged
                     value: false
                 read-only: false
-              signpostPosition: right-middle
       title: 2. 스토리지
     - id: page_app
       sections:
@@ -550,19 +518,16 @@ layout:
               state:
                 visible: true
                 read-only: true
-              signpostPosition: right-middle
             - id: adminPassword
               display: passwordField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: ssh_public_key
               display: textField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: 6. Application Config (앱 및 추가 구성)
           fields:
             - id: webServer
@@ -570,31 +535,26 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: servicePort
               display: integerField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: sshTargetPort
               display: integerField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: trustedProxyCidrs
               display: textField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: timezone
               display: textField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: 7. Repository Overrides (저장소 선택)
           fields:
             - id: aptMirror
@@ -605,7 +565,6 @@ layout:
                   - contains:
                       image: ubuntu
                     value: true
-              signpostPosition: right-middle
             - id: photonRepoBaseUrl
               display: textField
               state:
@@ -614,7 +573,6 @@ layout:
                   - contains:
                       image: photon
                     value: true
-              signpostPosition: right-middle
       title: 3. OS / 앱 설정
 schema:
   projects:

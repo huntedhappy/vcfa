@@ -74,3 +74,4 @@ for (var j = 0; j < uniqueResults.length; j++) {
 }
 
 return uniqueResults;
+

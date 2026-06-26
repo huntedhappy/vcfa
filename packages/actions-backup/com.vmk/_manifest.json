@@ -1,0 +1,7 @@
+[
+  {"name":"ConfManager","outputType":"Any","version":"1.0.0","jsBytes":3932},
+  {"name":"NsxtManager","outputType":"Any","version":"1.0.0","jsBytes":1214},
+  {"name":"TaskManager","outputType":"Any","version":"1.0.0","jsBytes":1847},
+  {"name":"VcsaManager","outputType":"Any","version":"1.0.0","jsBytes":4948},
+  {"name":"VraManager","outputType":"Any","version":"1.0.0","jsBytes":15703}
+]

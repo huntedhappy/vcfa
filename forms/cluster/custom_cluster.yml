@@ -9,13 +9,11 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: namespace
               display: dropDown
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: section_14ea3b62
           fields:
             - id: guestcluster
@@ -23,7 +21,6 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: section_e1d6b788
           fields:
             - id: storageclass
@@ -31,7 +28,6 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: section_a092ff5f
           fields:
             - id: ntpserver
@@ -39,13 +35,11 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: ssh_enabled
               display: checkbox
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: ssh_public_key
               display: textField
               state:
@@ -54,7 +48,6 @@ layout:
                   - equals:
                       ssh_enabled: true
                     value: true
-              signpostPosition: right-middle
         - id: section_91b804a3
           fields:
             - id: contents_library
@@ -62,13 +55,11 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: os
               display: dropDown
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: ubuntu_version
               display: dropDown
               state:
@@ -77,7 +68,6 @@ layout:
                   - equals:
                       os: ubuntu
                     value: true
-              signpostPosition: right-middle
         - id: section_afa6ef5b
           fields:
             - id: trust_enabled
@@ -85,7 +75,6 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: trust_ca
               display: textArea
               state:
@@ -94,13 +83,11 @@ layout:
                   - equals:
                       trust_enabled: true
                     value: true
-              signpostPosition: right-middle
             - id: trust_base64
               display: textField
               state:
                 visible: false
                 read-only: false
-              signpostPosition: right-middle
         - id: section_409d7caa
           fields:
             - id: kr_version
@@ -108,19 +95,16 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: banner
               display: textArea
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: fips_enabled
               display: checkbox
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: section_cfd2176f
           fields:
             - id: default_disk_size
@@ -128,7 +112,6 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: section_263f71d1
           fields:
             - id: master_count
@@ -136,19 +119,16 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: vmclass_con
               display: dropDown
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: master_disk_size
               display: integerField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: section_d843cd5c
           fields:
             - id: enable_second_nodepool
@@ -156,25 +136,21 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: worker_count
               display: integerField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: vmclass_worker
               display: dropDown
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: worker_disk_size
               display: integerField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: worker_count2
               display: integerField
               state:
@@ -183,7 +159,6 @@ layout:
                   - equals:
                       enable_second_nodepool: true
                     value: true
-              signpostPosition: right-middle
             - id: vmclass_worker2
               display: dropDown
               state:
@@ -192,7 +167,6 @@ layout:
                   - equals:
                       enable_second_nodepool: true
                     value: true
-              signpostPosition: right-middle
             - id: worker_disk_size2
               display: integerField
               state:
@@ -201,7 +175,6 @@ layout:
                   - equals:
                       enable_second_nodepool: true
                     value: true
-              signpostPosition: right-middle
       title: General
 schema:
   projects:

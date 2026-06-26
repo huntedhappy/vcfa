@@ -1,0 +1,19 @@
+[
+  {"name":"ChangePasswordHash","outputType":"string","runtime":"python:3.11","version":"1.0.0","jsBytes":729},
+  {"name":"doubleBase64","outputType":"string","runtime":"python:3.11","version":"1.0.0","jsBytes":1884},
+  {"name":"validatePasswordMatch","outputType":"string","runtime":"python:3.11","version":"1.0.0","jsBytes":1111},
+  {"name":"getAdminUserByImage","outputType":"string","runtime":"js","version":"1.0.0","jsBytes":441},
+  {"name":"dumpVcRoots","outputType":"Any","runtime":"js","version":"1.0.0","jsBytes":396},
+  {"name":"getContentsLibrary","outputType":"Array/Properties","runtime":"js","version":"1.0.0","jsBytes":783},
+  {"name":"getKRVersion","outputType":"Array/Properties","runtime":"js","version":"1.0.0","jsBytes":1017},
+  {"name":"getNamespaces","outputType":"Array/string","runtime":"js","version":"1.0.0","jsBytes":1357},
+  {"name":"getOS","outputType":"Array/Properties","runtime":"js","version":"1.0.0","jsBytes":728},
+  {"name":"getProjectsNames","outputType":"Array/string","runtime":"js","version":"1.0.0","jsBytes":1464},
+  {"name":"getStorageClass","outputType":"Array/Properties","runtime":"js","version":"1.0.0","jsBytes":3076},
+  {"name":"getStorageClassOptional","outputType":"Array/Properties","runtime":"js","version":"1.0.0","jsBytes":3262},
+  {"name":"getStroageClassManual","outputType":"Array/Properties","runtime":"js","version":"1.0.0","jsBytes":719},
+  {"name":"getStroageClassManualOptionals","outputType":"Array/Properties","runtime":"js","version":"1.0.0","jsBytes":820},
+  {"name":"getUbuntuVersion","outputType":"Array/Properties","runtime":"js","version":"1.0.0","jsBytes":843},
+  {"name":"getVMClass","outputType":"Array/Properties","runtime":"js","version":"1.0.0","jsBytes":1078},
+  {"name":"getVMImage","outputType":"Array/Properties","runtime":"js","version":"1.0.0","jsBytes":2649}
+]

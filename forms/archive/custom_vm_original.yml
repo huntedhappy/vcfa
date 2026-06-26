@@ -9,13 +9,11 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: namespace
               display: dropDown
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: 2. Compute Spec (컴퓨팅 사양)
           fields:
             - id: vmclass
@@ -23,13 +21,11 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: image
               display: dropDown
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: 3. Network Settings (네트워크 설정)
           fields:
             - id: hostname
@@ -37,25 +33,21 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: domainname
               display: textField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: dnsservers
               display: textField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: searchdomains
               display: textField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: 4. Storage Settings (스토리지 설정)
           fields:
             - id: storageclass
@@ -63,25 +55,21 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: dataDiskSize
               display: textField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: mountPoint
               display: textField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: fsType
               display: dropDown
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: 5. Credentials (인증 정보)
           fields:
             - id: adminUser
@@ -89,19 +77,16 @@ layout:
               state:
                 visible: true
                 read-only: true
-              signpostPosition: right-middle
             - id: adminPassword
               display: passwordField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: ssh_public_key
               display: textField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: 6. Application Config (앱 및 추가 구성)
           fields:
             - id: webServer
@@ -109,25 +94,21 @@ layout:
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: servicePort
               display: integerField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: trustedProxyCidrs
               display: textField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
             - id: timezone
               display: textField
               state:
                 visible: true
                 read-only: false
-              signpostPosition: right-middle
         - id: section_cbe4069c
           fields:
             - id: aptMirror
@@ -138,7 +119,6 @@ layout:
                   - contains:
                       image: ubuntu
                     value: true
-              signpostPosition: right-middle
             - id: photonRepoBaseUrl
               display: textField
               state:
@@ -147,7 +127,6 @@ layout:
                   - contains:
                       image: photon
                     value: true
-              signpostPosition: right-middle
       title: Web VM 배포 요청
 schema:
   projects:
