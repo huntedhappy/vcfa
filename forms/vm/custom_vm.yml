@@ -671,7 +671,6 @@ schema:
     type:
       dataType: string
       isMultiple: false
-    default: custom-best-effort-large-4c-8g
     valueList:
       id: /data/vro-actions/com.vmk.dk/getVMClass
       type: dynamic

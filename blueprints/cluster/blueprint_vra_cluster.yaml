@@ -22,12 +22,10 @@ inputs:
   vmclass_con:
     type: string
     title: VMclass Master Size
-    default: custom-best-effort-large-4c-8g
     $data: /data/vro-actions/com.vmk.dk/getVMClass?ProjectName={{projects}}&NamespaceName={{namespace}}
   vmclass_worker:
     type: string
     title: VMclass Worker NodePool 1 Size
-    default: custom-best-effort-large-4c-8g
     $data: /data/vro-actions/com.vmk.dk/getVMClass?ProjectName={{projects}}&NamespaceName={{namespace}}
   default_disk_size:
     type: integer
@@ -56,7 +54,6 @@ inputs:
   vmclass_worker2:
     type: string
     title: VMclass Worker NodePool 2 Size
-    default: custom-best-effort-large-4c-8g
     $data: /data/vro-actions/com.vmk.dk/getVMClass?ProjectName={{projects}}&NamespaceName={{namespace}}
   worker_count2:
     type: integer
@@ -77,7 +74,6 @@ inputs:
   contents_library:
     type: string
     title: Contents Library
-    default: cl-3d26d6e2a9bf8ba6e
     $data: /data/vro-actions/com.vmk.dk/getContentsLibrary
   os:
     type: string

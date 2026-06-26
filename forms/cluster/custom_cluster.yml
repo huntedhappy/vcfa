@@ -259,7 +259,6 @@ schema:
     type:
       dataType: string
       isMultiple: false
-    default: custom-best-effort-large-4c-8g
     valueList:
       id: /data/vro-actions/com.vmk.dk/getVMClass
       type: dynamic
@@ -270,7 +269,6 @@ schema:
     type:
       dataType: string
       isMultiple: false
-    default: custom-best-effort-large-4c-8g
     valueList:
       id: /data/vro-actions/com.vmk.dk/getVMClass
       type: dynamic
@@ -280,7 +278,6 @@ schema:
     type:
       dataType: string
       isMultiple: false
-    default: custom-best-effort-large-4c-8g
     valueList:
       id: /data/vro-actions/com.vmk.dk/getVMClass
       type: dynamic
@@ -343,7 +340,6 @@ schema:
     type:
       dataType: string
       isMultiple: false
-    default: cl-3d26d6e2a9bf8ba6e
     valueList:
       id: /data/vro-actions/com.vmk.dk/getContentsLibrary
       type: dynamic

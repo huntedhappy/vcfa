@@ -42,7 +42,6 @@ inputs:
   vmclass:
     type: string
     title: VM Class
-    default: custom-best-effort-large-4c-8g
     $data: /data/vro-actions/com.vmk.dk/getVMClass?ProjectName={{projects}}&NamespaceName={{namespace}}
   vmCount:
     type: integer
