@@ -17,6 +17,35 @@ cp .env.tenant.example .env.tenant   # tenant 모드용 (복사만으로 tenant 
 
 ---
 
+## 한 번에 — 배포(올리기) / 받기(받아오기)
+
+레포 ↔ VCFA 를 한 줄로. 둘 다 `.env.tenant` 만 맞으면 동작 (인자 생략 시 `.env.tenant` 기본).
+
+### 올리기 (repo → VCFA) : `clean-deploy.sh`
+```bash
+bash scripts/clean-deploy.sh .env.tenant
+```
+등록(Host/vCenter/vAPI, 이미 있으면 자동 생략) → 패키지 import → **동명 blueprint 삭제 후 fresh 생성** + 폼(signpostPosition 자동 제거) → 검증.
+- UI 에서 blueprint 를 미리 안 지워도 됨 (recreate 가 삭제+재생성). 끝나면 카탈로그 Request 폼에서 드롭다운 확인.
+- 전제(`.env.tenant`): 로그인 4개 + `VCFA_HOST_API_TOKEN`(UI 발급 *지속* 토큰) + `VC_HOST`/`VC_USER`/`VC_PASS`.
+
+### 받기 (VCFA → repo) : `clean-export.sh`
+```bash
+bash scripts/clean-export.sh .env.tenant
+git diff -- packages actions blueprints forms     # 바뀐 내용 확인
+git add -A && git commit && git push origin main
+```
+로컬 관리파일 삭제 → 라이브에서 package/actions/blueprints/forms 를 받아 각 폴더에 저장 (폼은 *블루프린트에 붙은 것*에서, form-service 아님).
+- ⚠️ **라이브 현재 상태 그대로** 받아 로컬을 덮어씀 → 받기 전 VCFA 가 "최종 상태" 인지 확인.
+- 전제(`.env.tenant`): 로그인 4개만 (`VC_*`/토큰 불필요 — 등록은 export 에 안 씀).
+- 잘못 받으면 복구: `git checkout -- packages actions blueprints forms`
+- 매핑에 없는 라이브 blueprint 는 `blueprints/exported`·`forms/exported` 로 받음 → 필요 시 `scripts/clean-export.sh` 의 `MAP` 에 추가.
+
+> 흐름: `repo ──(clean-deploy)──▶ VCFA ──(UI 테스트·수정)──▶ ──(clean-export)──▶ repo ──(commit/push)`
+> 상세 단계별 수동 절차는 [docs/runbooks/clean-reupload.md](docs/runbooks/clean-reupload.md) 참고.
+
+---
+
 # 1. System 모드
 ```bash
 source scripts/session.sh
