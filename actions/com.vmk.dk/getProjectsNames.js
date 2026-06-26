@@ -1,5 +1,6 @@
-// Return type: Array/string
+// Return type: Array/Properties
 // Inputs: 없음
+// ★ 드롭다운은 {label,value} 형식 필요 — Array/string({id,name})이면 UI 가 못 그려 무한로딩.
 
 var hostTypeName = "VCFA:Host";
 var hosts = Server.findAllForType(hostTypeName, null);
@@ -27,7 +28,7 @@ if (!projects || projects.length === 0) {
 
 System.log(">>> projects.length = " + projects.length);
 
-var projectNames = [];
+var results = [];
 
 for (var i = 0; i < projects.length; i++) {
     var p = projects[i];
@@ -37,9 +38,12 @@ for (var i = 0; i < projects.length; i++) {
 
     if (name) {
         System.log("Project name = " + name);
-        projectNames.push(name.toString());
+        var prop = new Properties();
+        prop.put("label", name.toString());
+        prop.put("value", name.toString());
+        results.push(prop);
     }
 }
 
-System.log("projectNames = " + projectNames);
-return projectNames;
+System.log("projects results = " + results.length);
+return results;

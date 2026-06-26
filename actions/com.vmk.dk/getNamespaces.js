@@ -1,6 +1,7 @@
 // Action name 예: getNamespacesNames
 // Input: ProjectName (string)
-// Return type: Array/string
+// Return type: Array/Properties
+// ★ 드롭다운은 {label,value} 형식 필요 — Array/string({id,name})이면 UI 가 못 그려 무한로딩.
 
 var hostTypeName = "VCFA:Host";
 var hosts = Server.findAllForType(hostTypeName, null);
@@ -32,15 +33,18 @@ if (!namespaces || namespaces.length === 0) {
     return [];
 }
 
-var nsNames = [];
+var results = [];
 for (var i = 0; i < namespaces.length; i++) {
     var ns = namespaces[i];
     var nsName = "";
     try { nsName = ns.name; } catch (e) {}
     if (nsName) {
-        nsNames.push(nsName.toString());
+        var prop = new Properties();
+        prop.put("label", nsName.toString());
+        prop.put("value", nsName.toString());
+        results.push(prop);
     }
 }
 
-System.log(">>> nsNames = " + nsNames);
-return nsNames;
+System.log(">>> namespace results = " + results.length);
+return results;
