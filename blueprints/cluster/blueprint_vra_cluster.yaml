@@ -23,12 +23,12 @@ inputs:
     type: string
     title: VMclass Master Size
     default: custom-best-effort-large-4c-8g
-    $data: /data/vro-actions/com.vmk.dk/getVMClass
+    $data: /data/vro-actions/com.vmk.dk/getVMClass?ProjectName={{projects}}&NamespaceName={{namespace}}
   vmclass_worker:
     type: string
     title: VMclass Worker NodePool 1 Size
     default: custom-best-effort-large-4c-8g
-    $data: /data/vro-actions/com.vmk.dk/getVMClass
+    $data: /data/vro-actions/com.vmk.dk/getVMClass?ProjectName={{projects}}&NamespaceName={{namespace}}
   default_disk_size:
     type: integer
     title: Default Disk Size
@@ -57,7 +57,7 @@ inputs:
     type: string
     title: VMclass Worker NodePool 2 Size
     default: custom-best-effort-large-4c-8g
-    $data: /data/vro-actions/com.vmk.dk/getVMClass
+    $data: /data/vro-actions/com.vmk.dk/getVMClass?ProjectName={{projects}}&NamespaceName={{namespace}}
   worker_count2:
     type: integer
     title: Worker NodePool 2 Count
