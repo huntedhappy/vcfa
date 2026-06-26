@@ -2,7 +2,7 @@ layout:
   pages:
     - id: page_general
       sections:
-        - id: section_d95b8d65
+        - id: 1. Environment (환경 설정)
           fields:
             - id: projects
               display: dropDown
@@ -14,105 +14,38 @@ layout:
               state:
                 visible: true
                 read-only: false
-        - id: section_14ea3b62
+        - id: 2. Cluster (클러스터)
           fields:
             - id: guestcluster
               display: textField
               state:
                 visible: true
                 read-only: false
-        - id: section_e1d6b788
+        - id: 3. Storage (스토리지)
           fields:
             - id: storageclass
               display: dropDown
               state:
                 visible: true
                 read-only: false
-        - id: section_a092ff5f
-          fields:
-            - id: ntpserver
-              display: textField
-              state:
-                visible: true
-                read-only: false
-            - id: ssh_enabled
-              display: checkbox
-              state:
-                visible: true
-                read-only: false
-            - id: ssh_public_key
-              display: textField
-              state:
-                read-only: false
-                visible:
-                  - equals:
-                      ssh_enabled: true
-                    value: true
-        - id: section_91b804a3
-          fields:
-            - id: contents_library
-              display: dropDown
-              state:
-                visible: true
-                read-only: false
-            - id: os
-              display: dropDown
-              state:
-                visible: true
-                read-only: false
-            - id: ubuntu_version
-              display: dropDown
-              state:
-                read-only: false
-                visible:
-                  - equals:
-                      os: ubuntu
-                    value: true
-        - id: section_afa6ef5b
-          fields:
-            - id: trust_enabled
-              display: checkbox
-              state:
-                visible: true
-                read-only: false
-            - id: trust_ca
-              display: textArea
-              state:
-                read-only: false
-                visible:
-                  - equals:
-                      trust_enabled: true
-                    value: true
-            - id: trust_base64
-              display: textField
-              state:
-                visible: false
-                read-only: false
-        - id: section_409d7caa
+        - id: 4. Kubernetes (쿠버네티스)
           fields:
             - id: kr_version
               display: dropDown
               state:
                 visible: true
                 read-only: false
-            - id: banner
-              display: textArea
-              state:
-                visible: true
-                read-only: false
-            - id: fips_enabled
-              display: checkbox
-              state:
-                visible: true
-                read-only: false
-        - id: section_cfd2176f
+      title: 1. 기본 설정
+    - id: page_nodes
+      sections:
+        - id: 5. Common (공통)
           fields:
             - id: default_disk_size
               display: integerField
               state:
                 visible: true
                 read-only: false
-        - id: section_263f71d1
+        - id: 6. Master Node (마스터 노드)
           fields:
             - id: master_count
               display: integerField
@@ -129,7 +62,7 @@ layout:
               state:
                 visible: true
                 read-only: false
-        - id: section_d843cd5c
+        - id: 7. Worker NodePools (워커 노드풀)
           fields:
             - id: enable_second_nodepool
               display: checkbox
@@ -175,7 +108,85 @@ layout:
                   - equals:
                       enable_second_nodepool: true
                     value: true
-      title: General
+      title: 2. 노드 구성
+    - id: page_os
+      sections:
+        - id: 8. OS / Image (OS·이미지)
+          fields:
+            - id: contents_library
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+            - id: os
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+            - id: ubuntu_version
+              display: dropDown
+              state:
+                read-only: false
+                visible:
+                  - equals:
+                      os: ubuntu
+                    value: true
+        - id: 9. NTP / SSH
+          fields:
+            - id: ntpserver
+              display: textField
+              state:
+                visible: true
+                read-only: false
+            - id: ssh_enabled
+              display: checkbox
+              state:
+                visible: true
+                read-only: false
+            - id: ssh_public_key
+              display: textField
+              state:
+                read-only: false
+                visible:
+                  - equals:
+                      ssh_enabled: true
+                    value: true
+      title: 3. OS / 네트워크
+    - id: page_security
+      sections:
+        - id: 10. Trust CA (신뢰 인증서)
+          fields:
+            - id: trust_enabled
+              display: checkbox
+              state:
+                visible: true
+                read-only: false
+            - id: trust_ca
+              display: textArea
+              state:
+                read-only: false
+                visible:
+                  - equals:
+                      trust_enabled: true
+                    value: true
+            - id: trust_base64
+              display: textField
+              state:
+                visible: false
+                read-only: false
+        - id: 11. Security (보안)
+          fields:
+            - id: banner
+              display: textArea
+              state:
+                visible: true
+                read-only: false
+            - id: fips_enabled
+              display: checkbox
+              state:
+                visible: true
+                read-only: false
+      title: 4. 보안 설정
 schema:
   projects:
     label: Project Name
