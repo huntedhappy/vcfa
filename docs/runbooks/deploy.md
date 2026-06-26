@@ -47,7 +47,7 @@ vco_import_action actions/com.vmk.dk/validatePasswordMatch.js com.vmk.dk string 
 ### 3) 인벤토리 호스트 등록 (드롭다운 데이터 소스)
 ```bash
 vcfa_register_host        # VCFA:Host (projects/namespaces). VCFA_HOST_API_TOKEN 있으면 Shared Session 자동(카탈로그 폼 동작), 기존 호스트면 Update.
-vcfa_register_vcenter     # vCenter (getStorageClass)
+# vcfa_register_vcenter   # (선택/레거시) getStorageClass 도 2026-06-26 CCI 전환 → 어떤 $data 액션도 vCenter 미사용. 진단(dumpVcRoots)용만.
 # vcfa_register_vapi      # (선택/레거시) 2026-06-26 이후 어떤 $data 액션도 미사용(전부 CCI). 수동 VAPIManager 용도만.
 ```
 
@@ -72,7 +72,7 @@ content_publish blueprints/vm/blueprint_vm.yaml forms/vm/custom_vm.yml   # impor
 | **카탈로그 폼이 전부 무한로딩** | VCFA:Host 가 `Per User Session` 이거나 API 토큰 만료. `VCFA_HOST_API_TOKEN` 갱신 → `vcfa_register_host` 재실행(Shared Session). |
 | 직접 RUN은 되는데 카탈로그만 빈값 | 위와 동일 (카탈로그는 서비스 컨텍스트라 per-user 세션 없음 → Shared Session 필요). |
 | VM Image 드롭다운 비어있음 | `getVMImage` 는 VCFA:Host 의 CCI 프록시로 `clustervirtualmachineimages` 를 조회(입력 없음). 빈값이면 VCFA:Host 등록/토큰 또는 Supervisor 에 published VM 이미지 유무 확인. (더 이상 vAPI·`vra-image` 라이브러리 불필요) |
-| Storage Class 가 `k8s` 만 | vCenter PBM 정책이 9.x vCenter 플러그인에서 안 올라옴(별건, 조사 필요). |
+| Storage Class 가 `k8s` 만 (옛 버그) | RESOLVED 2026-06-26 — getStorageClass(Optional) 을 CCI `status.storageClasses` 로 전환(실제 클래스명 예 `obcluster-vsan-storage-policy`). vCenter PBM 경로·하드코딩 `k8s` 제거. |
 | `$data` 액션 throw | 액션은 throw 금지 → `[]` 반환해야 폼이 안 깨짐(이미 적용됨). |
 | **드롭다운 무한로딩(특정 필드: projects/namespace 등)** | 그 `$data` 액션이 `Array/string`({id,name}) → 카탈로그가 UI에 줄 때 value/label 없어 못 그림. **`Array/Properties` {label,value}** 로 반환하도록 액션 수정(`new Properties(); put("label",x); put("value",x)`). |
 | **데이터는 200으로 오는데 모든 드롭다운 무한로딩** | 백엔드/형식 다 정상(pod 로그·HAR이 200)이면 **브라우저 UI 렌더링** 문제. ① 다른 브라우저(Firefox/Edge)로 시도, ② F12 → **Console** 탭의 빨간 JS 에러 확인(Network/HAR·pod 로그엔 안 보임). 신버전 Chrome 호환 이슈면 Broadcom 케이스. |

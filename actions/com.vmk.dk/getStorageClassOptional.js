@@ -1,96 +1,61 @@
 // Return type: Array/Properties
+// ★ 동적: getStorageClass 와 동일하게 CCI 의 status.storageClasses[].name 을 합집합·중복제거하되,
+//   맨 앞에 '(상속)' 항목 추가(데이터 디스크가 OS Disk 의 Storage Class 를 그대로 쓰는 fallback).
+//   기존 vCenter PBM 경로 + 하드코딩 'k8s'(가짜값) 제거, CCI 로 전환(2026-06-26). 실패해도 최소 inherit 1개는 반환.
 
-var results = [];
 var INHERIT_VALUE = "__inherit__";
 var INHERIT_LABEL = "(상속) OS Disk Storage Class 사용";
-var K8S_VALUE = "k8s";
-function toStorageClassValue(name) {
-    var normalized = ("" + name).toLowerCase();
-    normalized = normalized.replace(/[^a-z0-9]+/g, "-");
-    normalized = normalized.replace(/^-+/, "").replace(/-+$/, "");
-    if (!normalized) {
-        normalized = "sc";
-    }
-    return normalized;
-}
+var CCI_PATH = "/cci/kubernetes/apis/infrastructure.cci.vmware.com/v1alpha3/supervisornamespaces?limit=500";
 
+var results = [];
+
+// 항상 맨 앞에 inherit
 var inheritProp = new Properties();
 inheritProp.put("name", INHERIT_LABEL);
 inheritProp.put("id", INHERIT_VALUE);
 results.push(inheritProp);
 
-var k8sProp = new Properties();
-k8sProp.put("name", K8S_VALUE);
-k8sProp.put("id", K8S_VALUE);
-results.push(k8sProp);
-
-try {
-    var vcenters = VcPlugin.allSdkConnections || [];
-
-    for (var i = 0; i < vcenters.length; i++) {
-        var vc = vcenters[i];
-        try {
-            var pbmProfileManager = vc.storageManagement.pbmProfileManager;
-
-            var resourceType = new PbmProfileResourceType();
-            resourceType.resourceType = "STORAGE";
-
-            var profileIds = pbmProfileManager.pbmQueryProfile(resourceType, null);
-
-            if (profileIds && profileIds.length > 0) {
-                var profiles = pbmProfileManager.pbmRetrieveContent(profileIds);
-
-                for (var k = 0; k < profiles.length; k++) {
-                    var profile = profiles[k];
-                    var prop = new Properties();
-                    prop.put("name", profile.name);
-                    prop.put("id", toStorageClassValue(profile.name));
-                    results.push(prop);
-                }
-            }
-        } catch (e) {
-            System.warn("Failed to retrieve storage policies from " + vc.name + ": " + e);
-        }
-    }
-} catch (eTop) {
-    System.warn("Failed to access vCenter SDK connections: " + eTop);
+var hosts = Server.findAllForType("VCFA:Host", null);
+if (!hosts || hosts.length === 0) {
+  System.warn("[getStorageClassOptional] VCFA:Host 없음 — inherit 만 반환");
+  return results;
 }
+var host = hosts[0];
 
 try {
-    var uniqueResults = [];
-    var seen = {};
-    for (var m = 0; m < results.length; m++) {
-        var value = "" + results[m].get("id");
-        if (!seen[value]) {
-            seen[value] = true;
-            uniqueResults.push(results[m]);
-        }
-    }
+  var rest = host.createRestClient();
+  var resp = rest.execute(rest.createRequest("GET", CCI_PATH, null));
+  var code = resp.getStatusCode();
+  if (code !== 200) {
+    System.warn("[getStorageClassOptional] CCI GET HTTP=" + code + " — inherit 만 반환");
+    return results;
+  }
 
-    if (!uniqueResults || uniqueResults.length === 0) {
-        System.warn("getStorageClassOptional uniqueResults is empty. returning fallback values.");
-        var fallbackInherit = new Properties();
-        fallbackInherit.put("name", INHERIT_LABEL);
-        fallbackInherit.put("id", INHERIT_VALUE);
-        var fallbackK8s = new Properties();
-        fallbackK8s.put("name", K8S_VALUE);
-        fallbackK8s.put("id", K8S_VALUE);
-        return [fallbackInherit, fallbackK8s];
-    }
+  var data = JSON.parse(resp.getContentAsString());
+  var items = (data && data.items) ? data.items : [];
+  var seen = {};
 
-    System.log("getStorageClassOptional uniqueResults.length=" + uniqueResults.length);
-    for (var j = 0; j < uniqueResults.length; j++) {
-        System.log("Label: " + uniqueResults[j].get("name") + " | Value: " + uniqueResults[j].get("id"));
-    }
+  for each (var ns in items) {
+    var scs = (ns.status && ns.status.storageClasses) ? ns.status.storageClasses : [];
+    for each (var sc in scs) {
+      var name = sc && sc.name ? String(sc.name) : "";
+      if (!name || seen[name]) { continue; }
+      seen[name] = true;
 
-    return uniqueResults;
-} catch (eDedup) {
-    System.error("getStorageClassOptional failed while finalizing results: " + eDedup);
-    var errInherit = new Properties();
-    errInherit.put("name", INHERIT_LABEL);
-    errInherit.put("id", INHERIT_VALUE);
-    var errK8s = new Properties();
-    errK8s.put("name", K8S_VALUE);
-    errK8s.put("id", K8S_VALUE);
-    return [errInherit, errK8s];
+      var prop = new Properties();
+      prop.put("name", name);
+      prop.put("id", name);
+      results.push(prop);
+    }
+  }
+
+  System.log("[getStorageClassOptional] results.length=" + results.length);
+  for (var j = 0; j < results.length; j++) {
+    System.log("[getStorageClassOptional] Label: " + results[j].get("name") + " | Value: " + results[j].get("id"));
+  }
+  return results;
+
+} catch (e) {
+  System.error("[getStorageClassOptional] 오류 발생 — inherit 만 반환: " + e);
+  return results;
 }

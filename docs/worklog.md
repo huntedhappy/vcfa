@@ -431,3 +431,16 @@
 - **레이아웃 조정 (DONE, 재배포)**: KR Version 을 페이지1(기본설정)에서 → 페이지3 "8. Kubernetes / OS Image" 섹션 **맨 위**로 이동(그 아래 CP/Worker OS Image). 캐스케이드 의존(version→OS)대로 버전을 먼저 고르게. 클러스터 버전 1개가 CP·Worker OS Image 둘을 동시에 필터하므로 version-first 가 정답(OS-first 면 두 OS 와 호환되는 버전 교집합이라 복잡). 재배포 release v20260626.122407.
 - **남은 것**: 사용자 UI 폼 최종 육안 확인. getOS·getUbuntuVersion·getContentsLibrary 는 클러스터 폼 미사용(액션 파일 보존).
 - **중복 방지 메모**: OS 이미지/라이브러리/버전 권위 소스 = **OSImage(run.tanzu.vmware.com)**, NOT clustervirtualmachineimages(라이브러리 구분 불가)·NOT namespaced VMI(403). resolve-os-image 셀렉터 형식: ubuntu 만 os-version 포함.
+
+---
+
+## 2026-06-26 (이어서4) — getStorageClass(Optional) CCI 전환 (하드코딩 'k8s' 가짜값 제거) → vCenter 의존도 제거
+
+- **상태**: DONE (라이브 검증).
+- **증상**: Storage Class 드롭다운에 실재하지 않는 `k8s` 값만 노출.
+- **원인**: `getStorageClass`/`getStorageClassOptional` 가 vCenter PBM(`pbmQueryProfile`) 조회 + **하드코딩 `k8s` push**. 9.x 에서 PBM 이 빈값이라 하드코딩 `k8s` 만 남음(라이브 확인: getStorageClass=`k8s` 1개).
+- **한 일**: 두 액션을 CCI `status.storageClasses` 로 전환(검증된 `getStroageClassManual(Optionals)` 와 동일 패턴). PBM·`k8s` 제거. Optional 은 맨 앞 `__inherit__` 유지.
+- **수정 파일**: `actions/com.vmk.dk/{getStorageClass,getStorageClassOptional}.js`, `docs/runbooks/{deploy.md,clean-reupload.md}`, `scripts/clean-deploy.sh`
+- **검증 (라이브)**: import PUT 200 → getStorageClass=`obcluster-vsan-storage-policy`(실제값), getStorageClassOptional=`(상속)`+`obcluster-vsan-storage-policy`. (블루프린트 재배포 불필요 — 액션 import 만으로 드롭다운 갱신)
+- **부수 효과**: getStorageClass 가 vCenter 의 마지막 $data 사용자였음 → **이제 폼 드롭다운 중 vCenter/PBM 사용 0개**(VcPlugin 은 진단 `dumpVcRoots` 만). vAPI 에 이어 **vCenter 등록도 선택/레거시**. 모든 드롭다운이 VCFA:Host(CCI) 만으로 동작.
+- **중복 방지 메모**: Storage Class 소스 = CCI status.storageClasses(name=id). getStorageClass==getStroageClassManual 로 수렴(둘 다 CCI). vCenter 등록 불필요.

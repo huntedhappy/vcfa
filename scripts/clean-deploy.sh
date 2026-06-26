@@ -13,7 +13,7 @@
 # 왜 [1] 이 필요한가:
 #   getProjectsNames.js 를 vRO UI 에서 그냥 RUN 하면 빈값이던 이유 =
 #   액션이 Server.findAllForType("VCFA:Host") 로 호스트를 찾는데, 호스트 미등록이면 빈 목록 return.
-#   → vcfa_register_host 가 그 해결. getStorageClass=vCenter, getVMImage/getContentsLibrary=vAPI.
+#   → vcfa_register_host 가 그 해결. 모든 $data 드롭다운(storageclass/vmimage/contentslibrary 등)=CCI(VCFA:Host).
 #
 # ★ import 는 반드시 패키지(vco_import_package)로:
 #   vco_import_all_js / 인자 없는 vco_import_action 은 output-type=Any 기본 → release 400.
@@ -66,8 +66,8 @@ step "[1] 오케스트레이터 연결 등록  (★ 필수 / 이미 등록됐으
 # 강제 재등록이 필요하면 VCFA_FORCE_REGISTER=1 로 실행.
 echo "--- VCFA:Host  (getProjectsNames/getNamespaces 'No VCFA:Host' 해결, 멱등=Update) ---"
 vcfa_register_host || die "VCFA:Host 등록 실패"
-echo "--- vCenter  (getStorageClass 소스) ---"
-vcfa_register_vcenter || warn "vCenter 등록 실패 — [4] getStorageClass 로 작동 확인."
+echo "--- (선택/레거시) vCenter — getStorageClass 도 CCI 전환(2026-06-26). 진단 dumpVcRoots 용만 ---"
+vcfa_register_vcenter || true   # 실패해도 무방(어떤 드롭다운도 vCenter 미사용).
 echo "--- (선택/레거시) vAPI endpoint + metamodel — 현재 어떤 \$data 액션도 미사용(전부 CCI) ---"
 vcfa_register_vapi || true   # 실패해도 무방(미사용). 수동 VAPIManager 필요 시에만.
 ok "연결 등록 단계 완료 (실제 작동 여부는 [4] 에서 검증)"
@@ -154,7 +154,7 @@ verify_action(){ # $1=action  $2=설명(등록원)
   if [ "$n" -gt 0 ]; then ok "$1 → ${n}개 ($2 정상)"; else warn "$1 → 0개 ($2 등록/권한 확인)"; fi
 }
 verify_action getProjectsNames  "VCFA:Host"
-verify_action getStorageClass   "vCenter"
+verify_action getStorageClass   "VCFA:Host(CCI)"
 verify_action getContentsLibrary "VCFA:Host(CCI)"
 verify_action getVMImage         "VCFA:Host(CCI)"
 
