@@ -444,3 +444,138 @@
 - **검증 (라이브)**: import PUT 200 → getStorageClass=`obcluster-vsan-storage-policy`(실제값), getStorageClassOptional=`(상속)`+`obcluster-vsan-storage-policy`. (블루프린트 재배포 불필요 — 액션 import 만으로 드롭다운 갱신)
 - **부수 효과**: getStorageClass 가 vCenter 의 마지막 $data 사용자였음 → **이제 폼 드롭다운 중 vCenter/PBM 사용 0개**(VcPlugin 은 진단 `dumpVcRoots` 만). vAPI 에 이어 **vCenter 등록도 선택/레거시**. 모든 드롭다운이 VCFA:Host(CCI) 만으로 동작.
 - **중복 방지 메모**: Storage Class 소스 = CCI status.storageClasses(name=id). getStorageClass==getStroageClassManual 로 수렴(둘 다 CCI). vCenter 등록 불필요.
+
+---
+
+## 2026-06-26 (이어서5) — 콘텐츠 라이브러리 생성 헬퍼 (기본 인프라 자동화) + 클러스터 OS Image/version 보강
+
+- **상태**: 헬퍼 DONE(라이브 검증). VM 이미지 라이브러리 콘텐츠(OVA 업로드)는 사용자 작업.
+- **배경**: VM cloud-init 미동작의 정공법 = 기존 VKS 노드이미지 말고 **표준 cloud 이미지를 별도 콘텐츠 라이브러리**에 올리기. 사용자가 provider 콘솔에서 `vcfa vm images`(로컬, PROVIDER) 라이브러리 생성(HAR 캡처). 이를 자동화.
+- **HAR 에서 확정한 생성 API**: `POST /cloudapi/v1/contentLibraries` body `{name, description, isSubscribed:false, autoAttach:true, storageClasses:[{id:urn:vcloud:storageClass:...}]}` → **202 + Location `/api/task/<id>`**(비동기). storageClass 예: `obcluster vSAN Storage Policy`=`urn:vcloud:storageClass:9376a275-...`.
+- **한 일**: 신규 `scripts/vcfa-infra-lib.sh` — `vcfa_create_content_library <name> [storageClass] [desc]`(멱등, 202 task 폴링=_vcfa_wait_task, 성공 시 `VCFA_CONTENT_LIBRARY_ID` export), `vcfa_list_content_libraries`, `vcfa_content_library_id <name>`. **provider 세션 필요**(cloudapi/v1/contentLibraries). `session.sh` 에 source 등록.
+- **검증(라이브)**: list → `vcfa vm images` 표시. 멱등 생성 → 기존 감지·생략·id export. (POST 생성경로는 HAR 흐름 그대로 + 검증된 task-poll; 쓰레기 라이브러리 안 만들려 멱등 경로만 라이브 실행.)
+- **남은 것**: 그 라이브러리에 **표준 Ubuntu/Photon cloud OVA 업로드**(UI/ovftool — 바이너리라 자동화 범위 밖) → autoAttach 로 Supervisor 노출 → getVMImage 가 집어오는지 + VM 배포 cloud-init 동작 검증. provider 라이브러리 이미지가 cluster/namespace 범위 중 어디로 뜨는지 확인(namespace 면 getVMImage 소스 조정 필요).
+- **함께(이어서3·4 보강)**: 클러스터 getKRVersion 값 = topology.version 포맷 `v1.35.2+vmware.1`(실배포 클러스터 일치), getOSImageByKR/getOSSelector 가 `+`/공백 모두 처리. OS Image 드롭다운 친근명(getOSImageByKR id=라벨) + 숨김 cp_selector/worker_selector($dynamicDefault getOSSelector)→resolve-os-image. 데이터레이어 검증 완료, v20260626.223331 재배포.
+- **중복 방지 메모**: 콘텐츠 라이브러리 생성 = `vcfa_create_content_library`(provider). 동적 $data 드롭다운은 카탈로그가 **id 를 표시**({label,value} 는 빈값됨) → 친근표시는 id=친근명 + 숨김 $dynamicDefault 로 머신값 분리(getOSSelector). KR/cluster version 포맷=`v<k8s>+vmware.<N>[-fips]`.
+
+---
+
+## 2026-06-27 — 클러스터 Common+Override 재구성 · HTTPS Secret 버그 수정 · 자율 E2E
+
+### 1. 클러스터 폼 Common+Override 재구성 (네이티브 VKS 모델)
+- **Common 탭**: `공통 VM Class`·`공통 OS Image`·`공통 Disk(default_disk_size)` = 모든 노드 기본값.
+- **Control Plane / Node Pools 탭**: `Override Common` 토글 → 켜야만 풀별 vmclass/OS/disk 노출, 끄면 공통 상속.
+- 블루프린트: `topology.variables`=공통, override=`(토글 && 값≠"") ? 풀별 : 공통` 삼항(미선택 시 공통 폴백 → 빈 vmClass CR 깨짐 방지).
+- **master_count = 1/3 dropdown**(etcd 쿼럼). override os_image 빈값 허용 위해 getOSImageByKR 에 inherit('') 옵션.
+- 재배포 `v20260627.045747` RELEASED. 폼-컨텍스트 검증: override vmclass/os_image 첫 옵션이 빈값(inherit) → 최소입력(override OFF) 배포 카탈로그 거부 안 됨 확인.
+
+### 2. HTTPS 인증서 Secret 생성 실패 — 근본원인 수정 ⭐
+- 증상: HTTPS 배포 시 `kubernetes.io/tls` Secret 생성 실패(사용자 보고).
+- 원인: `doubleBase64` 가 **인증서 전용**으로 작성됨 — PEM 헤더 보존을 `BEGIN CERTIFICATE` 만 해서, **개인키**의 `-----BEGIN PRIVATE KEY-----` 내부 공백이 `+`로 치환돼 `-----BEGIN+PRIVATE+KEY-----` 로 키 손상 → tls Secret 거부(cert/key 쌍 일치해도).
+- 수정: 경계줄 판정을 `line.strip().startswith("-----BEGIN"/"-----END")` 로 일반화(모든 PEM 타입 보존). live vRO(python:3.11) 재import 후 https.key 실행→`RSA key ok`. 패키지 재export 로 영속화.
+
+### 3. 자율 E2E 배포 (사용자 외출 — UI 에서 검증 예정)
+- **VM `e2e-https`** (HTTPS, https.crt/key): `CREATE_SUCCESSFUL`, **HttpsTlsSecret=OK**(=Secret 수정 검증), Gateway/Route/WebLB OK. httpsVipType=public, httpsHostname=`e2e-https.dtvcf.lab`. SSH 키(id_rsa.pub)도 주입, adminPassword=`E2eTestP@ss1`.
+- **Cluster `e2e-cl`** (SSH id_rsa.pub + CA ca.crt): Secret_1(트러스트 CA)=OK, 클러스터 프로비저닝 진행. ssh_enabled=true, trust_enabled=true. common=best-effort-large/Photon5/100Gi, master=1, worker=1.
+- **Windows `winchk2`** (win-2022-tmpl): `CREATE_SUCCESSFUL`, VirtualMachine/LoadBalancer OK. Administrator/`WinTest@2026!`.
+- **검증은 VCFA UI Deployments 뷰에서**: tenant·host 토큰 둘 다 워크로드 k8s LIST 403 → VM IP/LB VIP/Gateway VIP 자동추출 불가. UI 에서 주소 확인 후:
+  - HTTPS: Gateway VIP(public) → hosts 에 `e2e-https.dtvcf.lab` 매핑 → `https://e2e-https.dtvcf.lab` (cert SAN *.dtvcf.lab).
+  - 클러스터 SSH: 노드 IP 로 `ssh -i <id_rsa> vmware-system-user@<node>`. CA 주입은 노드의 additionalTrustedCAs 확인.
+  - Windows RDP: VM/LB IP:3389, Administrator/WinTest@2026!.
+
+### 4. govc(vCenter) 실측 진단 — RBAC 우회로 게스트 상태 확인
+- VCFA tenant·host 토큰은 워크로드 k8s LIST 403 → **vCenter(govc, .env VC_*)로 게스트 IP/전원/Tools/extraConfig 확인**.
+  `export GOVC_URL=https://$VC_USER:$VC_PASS@$VC_HOST GOVC_INSECURE=1; govc find / -type m -name '<host>*'; govc vm.info -json/-e <path>`
+- **e2e-https (Ubuntu)**: power=on, tools=running, **hostname=e2e-https ✓ 커스터마이즈 정상**, IPv4=172.28.0.69(내부망). 외부접근은 LB/Gateway VIP(Avi, UI 확인). cloud-init 정상.
+- **winchk2 (Windows 2022)**: power=on, tools=running 인데 **hostname=WIN-QRHQ9NJBSLG(기본값) + NIC=169.254 APIPA(DHCP/정적 실패) + RDP 닫힘 + 비번 미적용** → cloudbase-init 커스터마이즈 전혀 안 먹음.
+  - 메타데이터는 **완벽 전달**(extraConfig `guestinfo.metadata`=정적 172.28.0.68/27·hostname·netplan v2, `guestinfo.userdata`=Administrator 비번·RDP runcmd, `guestinfo.Cb.InstallStatus:3013`=cloudbase-init 설치됨). **전달 OK, 적용 실패.**
+  - 의심: netplan **v2**(cloud-init 형식) 네트워크를 cloudbase-init 가 미지원 + guestinfo datasource 미처리. `/var/tmp/ad` Windows 2025 결론과 동일 계열 → 해결은 이미지의 cloudbase-init 설정 수정 or guest-ops 우회. **이미지 레벨 미해결 과제**(게스트 진입 필요·RDP 불가로 순환).
+- 메모리: [[reference_vcfa_windows_cloudbase_init]], [[reference_vcfa_vm_infra_findings]](5번 RBAC).
+
+---
+
+## 2026-06-27 (이어서2) — 트러스트 CA double base64 확정 · HTTPS LB 단일 VIP · Windows 이미지 수정 계획
+
+### 5. 클러스터 트러스트 CA = double base64 (사용자 가설 적중, E2E 확정) ⭐
+- **증상**: trust_enabled=true 클러스터가 50분+ 영구 CREATE_INPROGRESS, **컨트롤플레인 노드 VM 조차 안 생김**.
+- **대조 실험(govc 로 노드 생성 확인 — k8s read 는 RBAC 403)**:
+  - `e2e-cl`(트러스트 CA, single base64): 50분+ 노드 0개.
+  - `e2e-nocert`(트러스트 제외): **2분 만에 CP 노드** 생성 → 인증서가 원인 확정.
+  - `e2e-dbl`(트러스트 CA, **double base64** = base64(base64(PEM))): **2분 만에 CP 노드** 생성 → double 이 해결.
+- **원인**: `additionalTrustedCAs.secretRef` 의 Secret `data.additional-ca-1` 은 **이중 base64** 필요(VKS 가 두 번 디코드). `doubleBase64` 액션은 이름과 달리 **single**(git 최초부터 base64 1회 — 내가 바꾼 거 아님, 인증서 처리 byte-identical 확인).
+- **수정**: 신규 `actions/com.vmk.dk/trustCaB64.js`(base64 2회) → 클러스터 form `trust_base64` 를 그걸로 교체. **HTTPS tls 는 single(doubleBase64) 그대로**(k8s tls 는 1회 디코드 — 이중이면 거부). 재배포 `v20260627.062558`.
+
+### 6. HTTPS 시 web(80) 중복 VIP 제거 (사용자 요청)
+- enableHttps=true → web VirtualMachineService 를 **ClusterIP**(VIP 미생성, Gateway 백엔드), false → LoadBalancer(기존). 외부 VIP 는 Gateway(443) 하나만.
+- SSH LB 는 web 과 **분리**(별도 VIP, ssh 22 전용, enableSshLb 시). 기존 web+ssh 결합 LB 제거.
+- 재배포 `v20260627.062710`. **★ ClusterIP 백엔드를 Avi Gateway(ako)가 라우팅하는지 실배포 HTTPS 접속 검증 필요**(VIP 가시성 RBAC 차단이라 사용자 확인).
+
+### 7. Windows 이미지 cloudbase-init 수정 계획 (미실행 — 이미지 파이프라인 작업)
+- **확정된 근본원인**: packer 가 sysprep `/generalize`+OOBE 로 봉인 → **빌트인 Administrator 비활성화**. cloudbase-init 가 배포 시 이를 재활성+비번/IP/호스트명 설정해야 하는데 **cloudbase-init 가 guestinfo 메타데이터를 적용 안 함**(전달은 OK: guestinfo.metadata=정적IP netplan v2·hostname, guestinfo.userdata=비번·RDP, Cb.InstallStatus=설치됨). 결과: Administrator 비활성 + APIPA + 기본호스트명 → **사용가능 자격증명 0개 → guest-ops 진입도 불가**(administrator/dthub!Packer1 인증 실패).
+- **수정 방향(`/var/tmp/ad` packer windows-2022/2025)**:
+  1. **Administrator 활성 유지** — sysprep-oobe/autounattend 가 Administrator 를 끄지 않게(또는 FirstLogon 으로 enable). 빌드비번 알려진 채로 남겨야 `/var/tmp/ad` 의 guest-ops 우회(win2025_customize.go)가 작동.
+  2. **cloudbase-init.conf 정비** — metadata_services 에 VMwareGuestInfoService, plugins 에 SetHostName/SetUserPassword(또는 CreateUser)/네트워크. 배포 부팅마다(또는 first-deploy) 실제 실행되게.
+  3. **네트워크 형식** — cloudbase-init 가 netplan **v2** 미지원이면, 정적 IP 를 cloudbase-init 지원 형식(v1/ENI)으로 주거나 guest-ops 로 설정(win2025_customize.go 의 New-NetIPAddress 방식).
+  4. **권장**: 1+3(또는 1+guest-ops) — `/var/tmp/ad` 의 검증된 guest-ops 경로 재사용(빌드비번 인증→비번/IP/호스트명 직접 주입→reboot). 단 이미지 재빌드 필요.
+- 메모리: [[reference_vcfa_windows_cloudbase_init]].
+
+---
+
+## 2026-06-27 (이어서3) — Windows 2025 배포 해결 (GOSC 불가 → no-bootstrap + guest-ops)
+
+### 문제
+Windows Server 2025 카탈로그 배포 시 비번/네트워크가 게스트에 적용 안 됨(Administrator 인증 불가). 근본원인:
+- **vSphere GOSC(Sysprep)가 2025 OOBE locale/hide 를 못 잡아 "Hi there"(지역선택)에서 멈춤** — vm-operator `bootstrap.sysprep` 도 동일 GOSC 엔진이라 같은 실패. GOSC 시도가 Administrator 를 망가뜨림(빌드비번 인증도 실패).
+- (`/var/tmp/ad` 도 동일 결론: 2025 엔 GOSC 안 붙이고 `guestinfo.dthub.*`+firstboot.ps1 로 후처리. firstboot.ps1 헤더 참조.)
+- 2022 는 GOSC 정상(사용자: "2022 는 원래 잘 됨").
+
+### 해결 (E2E 검증, winchk9 = Server 2025 build 26100)
+1. **블루프린트 no-bootstrap** ([blueprint_vm_windows.yaml](../blueprints/vm/blueprint_vm_windows.yaml)): `bootstrap` 블록 제거 → 템플릿 Administrator(빌드비번 `dthub!Packer1`) 보존. ※ no-bootstrap 에선 `spec.network.hostName/nameservers` 가 admission 거부(LinuxPrep/Sysprep 에서만 허용)라 **network 블록도 제거**. NIC 은 기본망 자동 부착.
+2. **배포 후 guest-ops** ([scripts/win2025-customize.sh](../scripts/win2025-customize.sh)): 빌드비번으로 VMware Tools 인증 → PowerShell 로 ① Administrator 새 비번 ② **정적 IP(★`Set-NetIPInterface -Dhcp Disabled` 먼저** — 안 끄면 DHCP 가 정적 덮어 APIPA; 이 망 DHCP 없음) ③ RDP 활성 ④ 호스트명 + reboot.
+3. **접속**: RDP LoadBalancer VIP(Avi) → 게스트 IP:3389. 게스트가 정적 IP 를 Tools 로 보고하면 LB 엔드포인트가 잡힘.
+
+### 사용법
+```
+# 1) 카탈로그에서 Windows(image=win-2025-tmpl) 배포 → guestOpsReady 대기(~3-10분)
+# 2) 후처리:
+scripts/win2025-customize.sh <hostname> <new-admin-pass> <static-ip> [gw] [prefix] [dns] [auth-pass]
+#   예: scripts/win2025-customize.sh win01 'P@ssw0rd!' 172.28.0.75
+```
+- **정적 IP 는 대역에서 빈 IP 를 지정**(ping 확인) — no-bootstrap 라 supervisor IPAM 이 예약 안 함(`/var/tmp/ad` 도 사용자 IP 입력 방식).
+- 2022 는 GOSC(`bootstrap.sysprep`)로 가능하나, 통일하려면 2022 도 이 no-bootstrap+guest-ops 로 가능.
+- 메모리: [[reference_vcfa_windows_cloudbase_init]].
+
+### 검증 결과 (winchk9)
+- 새 비번 `VklqqnfIJ251!` 인증 성공 / 옛 빌드비번 차단 / 정적IP `172.28.0.75` (govc 확인) / fDenyTSConnections=0 / RDP LB state=OK.
+
+---
+
+## 2026-06-27 (이어서4) — Windows 2022/2025 경로 분리 (2022=네이티브 GOSC, 빌드비번 불필요)
+
+### 결론: 2022 와 2025 는 부트스트랩이 달라야 함
+- **2025**: OOBE 변경으로 GOSC(structured sysprep + rawSysprep 둘 다)가 "Hi there"에서 멈춤 → `vm_windows`(no-bootstrap) + `scripts/win2025-customize.sh`(guest-ops, 빌드비번 `WIN_BUILD_PASSWORD` 필요).
+- **2022**: 옛 OOBE 라 GOSC 정상 → 신규 **`vm_windows_2022`**(`bootstrap.sysprep` 구조화) 블루프린트. **배포 폼 비번을 GOSC 가 적용 = 빌드비번/헬퍼 불필요.**
+
+### vm_windows_2022 (E2E 검증, win2022t)
+- `blueprints/vm/blueprint_vm_windows_2022.yaml` (+ `forms/vm/custom_vm_2022.yml`): BootstrapSecret(administrator-password) + `bootstrap.sysprep.sysprep`(guiUnattended.password→secret, identification.joinWorkgroup, userData, guiRunOnce=RDP) + network(hostName/nameservers).
+- **검증**: hostname=win2022t ✅, 배포 폼 비번(Test2022@Pass1!) 작동 ✅, **빌드비번(dthub!Packer1) 차단** ✅, **IP=172.28.0.68 자동 IPAM** ✅ (2025 no-bootstrap 과 달리 정적IP 수동 불필요).
+- 사용법: 카탈로그 `vm_windows_2022`, image=win-2022-tmpl, 비번 입력 → 끝. (헬퍼 없음)
+
+| | 블루프린트 | 비번 | IP | 빌드비번 | 헬퍼 |
+|---|---|---|---|---|---|
+| 2022 | vm_windows_2022 (GOSC) | 폼 비번 | 자동 IPAM | 불필요 | 불필요 |
+| 2025 | vm_windows (no-bootstrap) | guest-ops | 헬퍼 정적IP | 필요(.env) | 필요 |
+
+---
+
+## 2026-06-27 (이어서5) — 블루프린트/폼/카탈로그 이름 일관화
+
+용도별로 명확히 rename (파일 + 카탈로그):
+| 용도 | 블루프린트 | 폼 | 카탈로그 |
+|---|---|---|---|
+| Linux VM | blueprint_vm_linux.yaml | custom_vm_linux.yml | vm_linux |
+| Windows 2022(GOSC) | blueprint_vm_win_2022.yaml | custom_vm_win_2022.yml | vm_win_2022 |
+| Windows 2025(no-bootstrap) | blueprint_vm_win_2025.yaml | custom_vm_win_2025.yml | vm_win_2025 |
+| VKS 클러스터 | blueprint_vks_cluster.yaml | vks_cluster.yaml | vks_cluster |
+
+옛 카탈로그(vm/vm_windows/vm_windows_2022/vra_cluster) 삭제 후 새 이름으로 재배포. (clean-deploy.sh 는 blueprints/ 전체 순회라 자동 반영.)

@@ -19,7 +19,6 @@
 | 파일 | 라인 수 | 비고 |
 | --- | --- | --- |
 | [blueprints/vm/blueprint_vm.yaml](../blueprints/vm/blueprint_vm.yaml) | 1428 | 현재 사용 중인 VM 배포 |
-| [blueprints/vm/blueprint_vm_storageclass_manual.yaml](../blueprints/vm/blueprint_vm_storageclass_manual.yaml) | 1528 | 스토리지 클래스 수동 입력 변형 |
 | [blueprints/cluster/blueprint_vra_cluster.yaml](../blueprints/cluster/blueprint_vra_cluster.yaml) | 230 | Kubernetes 게스트 클러스터 배포용 |
 | [blueprints/archive/blueprint_vm_original.yaml](../blueprints/archive/blueprint_vm_original.yaml) | 921 | 이전 버전 백업 |
 
@@ -27,7 +26,6 @@
 | 파일 | 라인 수 | 비고 |
 | --- | --- | --- |
 | [forms/vm/custom_vm.yml](../forms/vm/custom_vm.yml) | 1046 | 현재 VM 폼 (탭형) |
-| [forms/vm/custom_vm_storageclass_manual.yml](../forms/vm/custom_vm_storageclass_manual.yml) | 1156 | 매뉴얼 스토리지 변형 |
 | [forms/cluster/custom_cluster.yml](../forms/cluster/custom_cluster.yml) | 470 | 클러스터 폼 |
 | [forms/archive/custom_vm_original.yml](../forms/archive/custom_vm_original.yml) | 358 | 이전 VM 폼 백업 |
 | [forms/archive/custom_vra_cluster.yml](../forms/archive/custom_vra_cluster.yml) | 470 | `custom_cluster.yml`과 바이트 단위 동일 (중복) |

@@ -3,21 +3,15 @@
 //   맨 앞에 '(상속)' 항목을 추가(OS Disk 의 Storage Class 를 그대로 쓰는 fallback).
 //   vRO 가 VCFA:Host REST 클라이언트로 CCI 직접 GET (검증된 패턴). 실패해도 최소 inherit 1개는 반환.
 
-var INHERIT_VALUE = "__inherit__";
-var INHERIT_LABEL = "(상속) OS Disk Storage Class 사용";
+// ★ '__inherit__' 옵션 제거(2026-06-26): 카탈로그가 값(id)을 그대로 표시 → 폼 기본값 비움('')+placeholder.
+//   블루프린트는 빈값을 '상속'으로 처리(!= '' && != '__inherit__'). "비워두면 OS Disk Storage Class 와 동일".
 var CCI_PATH = "/cci/kubernetes/apis/infrastructure.cci.vmware.com/v1alpha3/supervisornamespaces?limit=500";
 
 var results = [];
 
-// 항상 맨 앞에 inherit
-var inheritProp = new Properties();
-inheritProp.put("name", INHERIT_LABEL);
-inheritProp.put("id", INHERIT_VALUE);
-results.push(inheritProp);
-
 var hosts = Server.findAllForType("VCFA:Host", null);
 if (!hosts || hosts.length === 0) {
-  System.warn("[getStroageClassManualOptionals] VCFA:Host 없음 — inherit 만 반환");
+  System.warn("[getStroageClassManualOptionals] VCFA:Host 없음 — 빈 목록 반환");
   return results;
 }
 var host = hosts[0];

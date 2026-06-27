@@ -151,7 +151,6 @@ UI 절차:
 1. 카탈로그 항목(블루프린트)의 **커스텀 폼**부터 삭제/초기화 — Content & Policies → Content → 항목 → Custom Form 제거.
 2. **블루프린트** 삭제 — Design → Cloud Templates(또는 Blueprints)에서 대상 3개 삭제:
    - `blueprint_vm` (또는 import 시 지정한 이름)
-   - `blueprint_vm_storageclass_manual`
    - `blueprint_vra_cluster`
    블루프린트를 지우면 연결된 카탈로그 item 도 자동 정리됩니다.
 
@@ -231,7 +230,6 @@ jq -r '.[] | "\(.name)\t\(.outputType)\t\(.runtime)"' packages/actions-backup/co
 bp_remote_import blueprints/vm/blueprint_vm.yaml
 # → 성공 시 VCFA_BP_ID 가 셸에 export 됨 (다음 단계가 자동 사용)
 
-bp_remote_import blueprints/vm/blueprint_vm_storageclass_manual.yaml
 bp_remote_import blueprints/cluster/blueprint_vra_cluster.yaml
 ```
 
@@ -245,7 +243,7 @@ bp_remote_import blueprints/cluster/blueprint_vra_cluster.yaml
 > export VCFA_BP_RECREATE=1      # bp_remote_import 가 동명 삭제 후 POST(create). 다른 project 동명은 유지.
 >
 > # 방법 B (수동·보수적) — 직접 지우고, 남아 있으면 에러로 멈춤:
-> bp_remote_list                 # vm / vm_storageclass_manual / vra_cluster 가 (어느 project 에도) 없어야 함
+> bp_remote_list                 # vm / vra_cluster 가 (어느 project 에도) 없어야 함
 > #   남아 있으면: bp_remote_delete <id> 로 삭제
 > export VCFA_BP_CREATE_ONLY=1   # 동명이 있으면 update 대신 에러로 멈춤(가짜 'updated' 방지)
 > ```
@@ -258,7 +256,6 @@ bp_remote_import blueprints/cluster/blueprint_vra_cluster.yaml
 | 블루프린트 | 짝 폼 |
 | --- | --- |
 | `blueprints/vm/blueprint_vm.yaml` | `forms/vm/custom_vm.yml` |
-| `blueprints/vm/blueprint_vm_storageclass_manual.yaml` | `forms/vm/custom_vm_storageclass_manual.yml` |
 | `blueprints/cluster/blueprint_vra_cluster.yaml` | `forms/cluster/custom_cluster.yml` |
 
 > `forms/archive/` 의 파일은 레거시 백업입니다. 운영에 쓰지 마세요.
@@ -279,8 +276,6 @@ bp_set_form "$VCFA_BP_ID" forms/vm/custom_vm.yml
 bp_remote_release                                 # VCFA_BP_ID 자동 사용, catalog item 자동 생성
 
 # ── VM (storageclass manual) ──
-bp_remote_import blueprints/vm/blueprint_vm_storageclass_manual.yaml
-bp_set_form "$VCFA_BP_ID" forms/vm/custom_vm_storageclass_manual.yml
 bp_remote_release
 
 # ── Cluster ──
@@ -293,7 +288,6 @@ bp_remote_release
 
 ```bash
 content_publish blueprints/vm/blueprint_vm.yaml                       forms/vm/custom_vm.yml
-content_publish blueprints/vm/blueprint_vm_storageclass_manual.yaml   forms/vm/custom_vm_storageclass_manual.yml
 content_publish blueprints/cluster/blueprint_vra_cluster.yaml         forms/cluster/custom_cluster.yml
 ```
 
@@ -312,7 +306,7 @@ content_publish blueprints/cluster/blueprint_vra_cluster.yaml         forms/clus
   (`jq walk(... del(.signpostPosition) ...)`, schema 의 `signpost:` 는 보존). stale 폼 파일이 들어와도 렌더링이 깨지지 않습니다.
 - 그래도 **벨트+서스펜더**로 import 전 폼 파일에 남은 게 없는지 확인하는 걸 권장합니다:
   ```bash
-  grep -rn 'signpostPosition' forms/vm/custom_vm.yml forms/vm/custom_vm_storageclass_manual.yml forms/cluster/custom_cluster.yml
+  grep -rn 'signpostPosition' forms/vm/custom_vm.yml forms/cluster/custom_cluster.yml
   # → 아무 것도 안 나와야 정상 (현재 repo 폼 3개는 0건)
   ```
 

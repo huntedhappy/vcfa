@@ -11,7 +11,6 @@
 ├── blueprints/                            # Cloud Assembly 블루프린트
 │   ├── vm/
 │   │   ├── blueprint_vm.yaml
-│   │   └── blueprint_vm_storageclass_manual.yaml
 │   ├── cluster/
 │   │   └── blueprint_vra_cluster.yaml
 │   └── archive/
@@ -19,7 +18,6 @@
 ├── forms/                                 # Service Broker 커스텀 폼
 │   ├── vm/
 │   │   ├── custom_vm.yml
-│   │   └── custom_vm_storageclass_manual.yml
 │   ├── cluster/
 │   │   └── custom_cluster.yml
 │   └── archive/

@@ -1,0 +1,237 @@
+layout:
+  pages:
+    - id: page_general
+      sections:
+        - id: 1. Environment (환경)
+          fields:
+            - id: projects
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+            - id: namespace
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+        - id: 2. Compute (컴퓨팅)
+          fields:
+            - id: vmclass
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+            - id: vmCount
+              display: integerField
+              state:
+                visible: true
+                read-only: false
+            - id: image
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+            - id: storageclass
+              display: dropDown
+              state:
+                visible: true
+                read-only: false
+        - id: 3. Network (네트워크)
+          fields:
+            - id: hostname
+              display: textField
+              state:
+                visible: true
+                read-only: false
+            - id: domainname
+              display: textField
+              state:
+                visible: true
+                read-only: false
+            - id: dnsservers
+              display: textField
+              state:
+                visible: true
+                read-only: false
+      title: General
+    - id: page_os
+      sections:
+        - id: 4. OS Access / Application
+          fields:
+            - id: adminPassword
+              display: passwordField
+              state:
+                visible: true
+                read-only: false
+            - id: timezone
+              display: textField
+              state:
+                visible: true
+                read-only: false
+            - id: enableIis
+              display: checkbox
+              state:
+                visible: true
+                read-only: false
+      title: OS / App
+    - id: page_lb
+      sections:
+        - id: 5. L4/L7 LoadBalancer
+          fields:
+            - id: rdpPort
+              display: integerField
+              state:
+                visible: true
+                read-only: false
+      title: L4/L7
+schema:
+  projects:
+    label: VCFA Project
+    description: 'Supervisor Project — namespace/vmclass/storage 동적 조회용. (카탈로그 상단 Project 와 같은 값)'
+    signpost: 'Supervisor Project. namespace/vmclass/storage 동적 조회의 기준이 됩니다.'
+    type:
+      dataType: string
+      isMultiple: false
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getProjectsNames
+      type: dynamic
+      parameters: []
+    constraints:
+      required: true
+  namespace:
+    label: Namespace Name
+    type:
+      dataType: string
+      isMultiple: false
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getNamespaces
+      type: dynamic
+      parameters:
+        - $type:
+            dataType: string
+            isMultiple: false
+          ProjectName: projects
+      isPageable: false
+    constraints:
+      required: true
+  vmclass:
+    label: VM Class
+    type:
+      dataType: string
+      isMultiple: false
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getVMClass
+      type: dynamic
+      parameters:
+        - $type:
+            dataType: string
+            isMultiple: false
+          ProjectName: projects
+        - $type:
+            dataType: string
+            isMultiple: false
+          NamespaceName: namespace
+    constraints:
+      required: true
+  vmCount:
+    label: VM 개수
+    description: '단일 VM 권장 — 이름/LB 셀렉터에 per-index 가 없어 2 이상이면 충돌 가능.'
+    signpost: '단일 VM 권장 (per-index 네이밍 없음).'
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 1
+  image:
+    label: VM Image (Windows)
+    description: '콘텐츠 라이브러리의 Windows cloud 이미지(cloudbase-init 포함). 예: win-2025-tmpl'
+    signpost: 'Windows cloud 이미지 (cloudbase-init 포함).'
+    type:
+      dataType: string
+      isMultiple: false
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getVMImage
+      type: dynamic
+      parameters:
+        - $type:
+            dataType: string
+            isMultiple: false
+          os: '`windows`'
+    constraints:
+      required: true
+  storageclass:
+    label: OS Disk Storage Class
+    type:
+      dataType: string
+      isMultiple: false
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getStorageClass
+      type: dynamic
+      parameters:
+        - $type:
+            dataType: string
+            isMultiple: false
+          ProjectName: projects
+        - $type:
+            dataType: string
+            isMultiple: false
+          NamespaceName: namespace
+    constraints:
+      required: true
+  hostname:
+    label: Computer Name
+    description: 'Windows 컴퓨터 이름. 예: winvm (NetBIOS 15자 제한 주의)'
+    signpost: 'Windows 컴퓨터 이름 (NetBIOS 15자 제한).'
+    type:
+      dataType: string
+      isMultiple: false
+    default: winvm
+  domainname:
+    label: Domain Name
+    description: 'VM 자신의 DNS 도메인 접미사. Computer Name 과 합쳐 FQDN (예: winvm + dtvcf.lab → winvm.dtvcf.lab).'
+    signpost: 'VM 도메인 접미사. Computer Name 과 합쳐 FQDN.'
+    type:
+      dataType: string
+      isMultiple: false
+    default: dtvcf.lab
+  dnsservers:
+    label: DNS Servers
+    description: 'VM 이 쓸 DNS 서버(nameserver) IP. 쉼표(,)로 여러 개. 예: 10.253.100.2,10.253.100.3'
+    signpost: 'DNS 서버(nameserver) IP. 쉼표로 여러 개.'
+    type:
+      dataType: string
+      isMultiple: false
+  adminPassword:
+    label: Administrator Password
+    description: '로컬 Administrator 비밀번호 (Windows 복잡도 정책 충족 필요).'
+    signpost: 'Windows 로컬 Administrator 비밀번호 (복잡도 정책 충족).'
+    type:
+      dataType: string
+      isMultiple: false
+    constraints:
+      required: true
+  timezone:
+    label: Timezone
+    description: 'Windows 타임존 이름. 예: Korea Standard Time (Linux 의 Asia/Seoul 과 형식 다름).'
+    signpost: 'Windows 타임존 이름 (예: Korea Standard Time).'
+    type:
+      dataType: string
+      isMultiple: false
+    default: Korea Standard Time
+  enableIis:
+    label: Install IIS (Web-Server)
+    description: 'true 면 IIS 웹서버 설치 (PowerShell Install-WindowsFeature Web-Server).'
+    signpost: 'true 면 IIS 웹서버 설치.'
+    type:
+      dataType: boolean
+      isMultiple: false
+    default: false
+  rdpPort:
+    label: RDP LoadBalancer Port
+    description: '외부에서 RDP 접근할 LoadBalancer 포트 (VM 내부는 3389).'
+    signpost: '외부 RDP 접근 LoadBalancer 포트.'
+    type:
+      dataType: integer
+      isMultiple: false
+    default: 3389
+options:
+  externalValidations: []

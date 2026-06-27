@@ -164,7 +164,6 @@ UI 탭/순서/필드 표시 정책은 [forms/vm/custom_vm.yml](../../forms/vm/cu
 | 블루프린트 | 짝 폼 |
 | --- | --- |
 | [blueprints/vm/blueprint_vm.yaml](../../blueprints/vm/blueprint_vm.yaml) | [forms/vm/custom_vm.yml](../../forms/vm/custom_vm.yml) |
-| [blueprints/vm/blueprint_vm_storageclass_manual.yaml](../../blueprints/vm/blueprint_vm_storageclass_manual.yaml) | [forms/vm/custom_vm_storageclass_manual.yml](../../forms/vm/custom_vm_storageclass_manual.yml) |
 | [blueprints/cluster/blueprint_vra_cluster.yaml](../../blueprints/cluster/blueprint_vra_cluster.yaml) | [forms/cluster/custom_cluster.yml](../../forms/cluster/custom_cluster.yml) |
 
 > [forms/archive/](../../forms/archive/) 안의 폼은 **이전 버전 백업**입니다. 운영에 적용하지 마세요. 같은 폴더의 `custom_vra_cluster.yml`은 `custom_cluster.yml`과 동일 내용([tech-debt.md](../tech-debt.md) 참조).
@@ -187,7 +186,6 @@ UI 탭/순서/필드 표시 정책은 [forms/vm/custom_vm.yml](../../forms/vm/cu
 | 드롭다운이 비어 있음 | vRO에 `VCFA:Host` 등록 여부 + 액션이 모듈 `com.vmk.dk`로 들어가 있는지 |
 | `VraManager()` 호출 실패 | [actions/com.vmk/VraManager.js](../../actions/com.vmk/VraManager.js) 의 `manager` 변수(기본 `"VMK"`)와 실제 vRO `vra-onprem` 호스트명 일치 여부 |
 | 폼이 블루프린트 input과 어긋남 | 짝이 맞는 폼을 import했는지 (위 매핑표) |
-| Storage Class가 "수동 입력"으로 떠야 함 | manual 변형 블루프린트/폼([blueprints/vm/blueprint_vm_storageclass_manual.yaml](../../blueprints/vm/blueprint_vm_storageclass_manual.yaml)) 사용 |
 
 ---
 

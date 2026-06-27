@@ -17,8 +17,11 @@ if (krIn === "") {
   System.warn("[getOSImageByKR] krVersion 비어있음 — 먼저 KR 버전 선택. 빈 목록 반환");
   return [];
 }
-var krKey = krIn.replace(/-vkr\.\d+$/, "");   // OSImage kubernetesVersion 라벨과 매칭할 키
-var wantWorker = (String(role || "").toLowerCase() === "worker");
+// OSImage 의 kubernetesVersion 라벨(예 v1.35.2---vmware.1)과 매칭할 키.
+// krVersion 은 이제 클러스터 포맷(v1.35.2+vmware.1) 으로 들어옴 → '+'→'---', 혹시 '-vkr.N' 있으면 제거. (옛 --- 포맷도 호환)
+var krKey = krIn.replace("+", "---").replace(" ", "---").replace(/-vkr\.\d+$/, "");
+// [item2] 폼 리터럴 바인딩('`worker`')의 백틱/공백이 섞여 와도 안전하게 정규화(엔진 동작 무관).
+var wantWorker = (String(role || "").toLowerCase().replace(/`/g, "").replace(/\s+/g, "") === "worker");
 
 var hosts = Server.findAllForType("VCFA:Host", null);
 if (!hosts || hosts.length === 0) {
@@ -93,8 +96,8 @@ try {
     if (String(osName).toLowerCase() === "ubuntu") { sel += ", os-version=" + osVer; }
 
     var prop = new Properties();
-    prop.put("name", label);
-    prop.put("id", sel);
+    prop.put("name", label);   // (카탈로그는 id 를 표시함)
+    prop.put("id", label);     // ★ 표시·전달 = 친근명("Ubuntu 22.04 - Kubernetes Service"). 실제 셀렉터는 getOSSelector 가 변환(숨김필드).
     results.push(prop);
   }
 
@@ -102,6 +105,13 @@ try {
     var an = String(a.get("name")), bn = String(b.get("name"));
     return (an < bn) ? -1 : (an > bn ? 1 : 0);
   });
+
+  // [common/override] 맨 앞에 "(공통 OS Image 사용)" 옵션(id=''). 풀별 override 가 비어도(공통 상속) 카탈로그 거부 방지.
+  //   common_os_image 는 required 라 '' 선택 시 검증에 걸려 실제 이미지 강제. override(not-required)는 '' = 공통 사용.
+  var inh = new Properties();
+  inh.put("name", "(공통 OS Image 사용)");
+  inh.put("id", "");
+  results.unshift(inh);
 
   System.log("[getOSImageByKR] krVersion=" + krIn + " (key=" + krKey + ") role=" + (wantWorker?"worker":"controlplane") + " → " + results.length);
   for (var j = 0; j < results.length; j++) {

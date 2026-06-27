@@ -6,27 +6,51 @@ inputs:
     $data: /data/vro-actions/com.vmk.dk/getProjectsNames
   namespace:
     type: string
-    title: Namespce Name
+    title: Namespace Name
     $data: /data/vro-actions/com.vmk.dk/getNamespaces?ProjectName={{projects}}
   storageclass:
     type: string
     title: vSAN Storage Class
-    $data: /data/vro-actions/com.vmk.dk/getStorageClass
+    $data: /data/vro-actions/com.vmk.dk/getStorageClass?ProjectName={{projects}}&NamespaceName={{namespace}}
   guestcluster:
     type: string
     title: Guest Cluster Name
+  cluster_class:
+    type: string
+    title: Cluster Class
+    description: '클러스터클래스(builtin-generic-vX.Y.Z) — 동적 조회. 새 버전(예 v3.6.0)이 나오면 자동 노출. 하드코딩 아님.'
+    $data: /data/vro-actions/com.vmk.dk/getClusterClass
   ntpserver:
     type: string
     title: NTP Servers
     description: '쉼표(,)로 여러 개 입력 (예: 10.253.100.2,10.253.100.3)'
+  common_vmclass:
+    type: string
+    title: VM Class (공통)
+    description: '모든 노드의 기본 VM Class. Control Plane/NodePool 에서 override 안 하면 이 값을 사용.'
+    $data: /data/vro-actions/com.vmk.dk/getVMClass?ProjectName={{projects}}&NamespaceName={{namespace}}
+  cp_override:
+    type: boolean
+    title: Control Plane — Override Common
+    default: false
+    description: 'true 면 Control Plane 에 공통과 다른 VM Class/OS Image/Disk 적용. false 면 공통 사용.'
+  worker_override:
+    type: boolean
+    title: Worker NodePool — Override Common
+    default: false
+    description: 'true 면 Worker 에 공통과 다른 VM Class/OS Image/Disk 적용. false 면 공통 사용.'
   vmclass_con:
     type: string
-    title: VMclass Master Size
-    $data: /data/vro-actions/com.vmk.dk/getVMClass?ProjectName={{projects}}&NamespaceName={{namespace}}
+    title: VMclass Master Size (override)
+    default: ''
+    description: 'Control Plane override 시에만. 비우면 공통 VM Class 사용.'
+    $data: /data/vro-actions/com.vmk.dk/getVMClassOptional?ProjectName={{projects}}&NamespaceName={{namespace}}
   vmclass_worker:
     type: string
-    title: VMclass Worker NodePool 1 Size
-    $data: /data/vro-actions/com.vmk.dk/getVMClass?ProjectName={{projects}}&NamespaceName={{namespace}}
+    title: VMclass Worker NodePool 1 Size (override)
+    default: ''
+    description: 'Worker override 시에만. 비우면 공통 VM Class 사용.'
+    $data: /data/vro-actions/com.vmk.dk/getVMClassOptional?ProjectName={{projects}}&NamespaceName={{namespace}}
   default_disk_size:
     type: integer
     title: Default Disk Size
@@ -35,6 +59,11 @@ inputs:
     type: integer
     title: Master Node Count
     default: 1
+    oneOf:
+      - title: '1 (단일 — 비프로덕션/테스트)'
+        const: 1
+      - title: '3 (HA — etcd 쿼럼)'
+        const: 3
   master_disk_size:
     type: integer
     title: Master Disk Size
@@ -54,7 +83,9 @@ inputs:
   vmclass_worker2:
     type: string
     title: VMclass Worker NodePool 2 Size
-    $data: /data/vro-actions/com.vmk.dk/getVMClass?ProjectName={{projects}}&NamespaceName={{namespace}}
+    default: ''
+    description: 'Worker NodePool 2 활성화 시에만 사용. 비활성화면 비워두세요(getVMClassOptional 의 빈값 옵션).'
+    $data: /data/vro-actions/com.vmk.dk/getVMClassOptional?ProjectName={{projects}}&NamespaceName={{namespace}}
   worker_count2:
     type: integer
     title: Worker NodePool 2 Count
@@ -71,16 +102,39 @@ inputs:
     type: string
     title: SSH Public Key
     default: ''
+  common_os_image:
+    type: string
+    title: OS Image (공통)
+    description: '모든 노드 기본 OS Image. KR Version 선택 후 노출. controlplane 호환(windows 제외). override 안 하면 이 값 사용.'
+    $data: /data/vro-actions/com.vmk.dk/getOSImageByKR?krVersion={{kr_version}}&role=controlplane
   os_image_cp:
     type: string
-    title: Control Plane OS Image
-    description: 'KR Version 선택 후 노출. 값 = resolve-os-image 셀렉터(os-name+content-library[+os-version]). windows 제외.'
+    title: Control Plane OS Image (override)
+    default: ''
+    description: 'Control Plane override 시에만. 비우면(=공통 OS Image 사용). windows 제외.'
     $data: /data/vro-actions/com.vmk.dk/getOSImageByKR?krVersion={{kr_version}}&role=controlplane
   os_image_worker:
     type: string
-    title: Worker OS Image
-    description: 'KR Version 선택 후 노출. worker 전용이라 windows 포함.'
+    title: Worker OS Image (override)
+    default: ''
+    description: 'Worker override 시에만. 비우면 공통 OS Image 사용. worker 전용이라 windows 포함.'
     $data: /data/vro-actions/com.vmk.dk/getOSImageByKR?krVersion={{kr_version}}&role=worker
+  # [숨김] OS Image 친근 라벨 → 실제 resolve-os-image 셀렉터 변환($dynamicDefault). 폼에선 visible:false.
+  common_selector:
+    type: string
+    title: (internal) Common OS Image Selector
+    default: ''
+    $dynamicDefault: /data/vro-actions/com.vmk.dk/getOSSelector?osImage={{common_os_image}}&krVersion={{kr_version}}&role=controlplane
+  cp_selector:
+    type: string
+    title: (internal) Control Plane OS Image Selector
+    default: ''
+    $dynamicDefault: /data/vro-actions/com.vmk.dk/getOSSelector?osImage={{os_image_cp}}&krVersion={{kr_version}}&role=controlplane
+  worker_selector:
+    type: string
+    title: (internal) Worker OS Image Selector
+    default: ''
+    $dynamicDefault: /data/vro-actions/com.vmk.dk/getOSSelector?osImage={{os_image_worker}}&krVersion={{kr_version}}&role=worker
   trust_enabled:
     type: boolean
     title: Trust CA Enabled
@@ -138,7 +192,7 @@ resources:
                 - 10.96.0.0/12
           serviceDomain: cluster.local
           topology:
-            class: builtin-generic-v3.5.0
+            class: ${input.cluster_class}
             version: ${input.kr_version}
             variables:
               - name: vsphereOptions
@@ -174,7 +228,7 @@ resources:
                   ntp:
                     servers: ${split(input.ntpserver, ",")}
               - name: vmClass
-                value: ${input.vmclass_con}
+                value: ${input.common_vmclass}
               - name: storageClass
                 value: ${input.storageclass}
               - name: volumes
@@ -188,21 +242,21 @@ resources:
               name: ${input.guestcluster}-${substring(replace(uuid(), "-", ""), 0, 4)}
               metadata:
                 annotations:
-                  run.tanzu.vmware.com/resolve-os-image: '${input.os_image_cp}'
+                  run.tanzu.vmware.com/resolve-os-image: '${(input.cp_override && input.cp_selector != "") ? input.cp_selector : input.common_selector}'
               variables:
                 overrides:
                   - name: vmClass
-                    value: ${input.vmclass_con}
+                    value: '${(input.cp_override && input.vmclass_con != "") ? input.vmclass_con : input.common_vmclass}'
                   - name: volumes
                     value:
                       - name: vol-${substring(replace(uuid(), "-", ""), 0, 4)}
                         mountPath: /var/lib/containerd
                         storageClass: ${input.storageclass}
-                        capacity: ${input.master_disk_size}Gi
+                        capacity: '${input.cp_override ? input.master_disk_size : input.default_disk_size}Gi'
             workers:
               machineDeployments: '${from_json("[" +
-                "{\"class\":\"node-pool\",\"name\":\"worker-node-1-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"replicas\":" + input.worker_count + ",\"metadata\":{\"annotations\":{\"run.tanzu.vmware.com/resolve-os-image\":\"" + input.os_image_worker + "\"}},\"variables\":{\"overrides\":[{\"name\":\"vmClass\",\"value\":\"" + input.vmclass_worker + "\"},{\"name\":\"volumes\",\"value\":[{\"name\":\"vol-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"mountPath\":\"/var/lib/containerd\",\"storageClass\":\"" + input.storageclass + "\",\"capacity\":\"" + input.worker_disk_size + "Gi\"}]}]}}" +
-                (input.enable_second_nodepool ? ",{\"class\":\"node-pool\",\"name\":\"worker-node-2-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"replicas\":" + input.worker_count2 + ",\"metadata\":{\"annotations\":{\"run.tanzu.vmware.com/resolve-os-image\":\"" + input.os_image_worker + "\"}},\"variables\":{\"overrides\":[{\"name\":\"vmClass\",\"value\":\"" + input.vmclass_worker2 + "\"},{\"name\":\"volumes\",\"value\":[{\"name\":\"vol-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"mountPath\":\"/var/lib/containerd\",\"storageClass\":\"" + input.storageclass + "\",\"capacity\":\"" + input.worker_disk_size2 + "Gi\"}]}]}}" : "") +
+                "{\"class\":\"node-pool\",\"name\":\"worker-node-1-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"replicas\":" + input.worker_count + ",\"metadata\":{\"annotations\":{\"run.tanzu.vmware.com/resolve-os-image\":\"" + (input.worker_override && input.worker_selector != "" ? input.worker_selector : input.common_selector) + "\"}},\"variables\":{\"overrides\":[{\"name\":\"vmClass\",\"value\":\"" + (input.worker_override && input.vmclass_worker != "" ? input.vmclass_worker : input.common_vmclass) + "\"},{\"name\":\"volumes\",\"value\":[{\"name\":\"vol-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"mountPath\":\"/var/lib/containerd\",\"storageClass\":\"" + input.storageclass + "\",\"capacity\":\"" + (input.worker_override ? input.worker_disk_size : input.default_disk_size) + "Gi\"}]}]}}" +
+                (input.enable_second_nodepool ? ",{\"class\":\"node-pool\",\"name\":\"worker-node-2-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"replicas\":" + input.worker_count2 + ",\"metadata\":{\"annotations\":{\"run.tanzu.vmware.com/resolve-os-image\":\"" + (input.worker_override && input.worker_selector != "" ? input.worker_selector : input.common_selector) + "\"}},\"variables\":{\"overrides\":[{\"name\":\"vmClass\",\"value\":\"" + (input.worker_override && input.vmclass_worker2 != "" ? input.vmclass_worker2 : input.common_vmclass) + "\"},{\"name\":\"volumes\",\"value\":[{\"name\":\"vol-" + substring(replace(uuid(), "-", ""), 0, 4) + "\",\"mountPath\":\"/var/lib/containerd\",\"storageClass\":\"" + input.storageclass + "\",\"capacity\":\"" + (input.worker_override ? input.worker_disk_size2 : input.default_disk_size) + "Gi\"}]}]}}" : "") +
                 "]")}'
   Secret_1:
     type: CCI.Supervisor.Resource
@@ -220,5 +274,9 @@ resources:
           name: ${input.guestcluster}-custom-trusted-ca-secret
           namespace: ${input.namespace}
         type: Opaque
-        stringData:
+        # [2026-06-27 E2E 확정] data.additional-ca-1 = trust_base64 = **double base64**(trustCaB64 액션 = base64(base64(PEM))).
+        #   VKS additionalTrustedCAs 소비자가 k8s data 디코드(1회) 후 한 번 더 디코드 → PEM. single(doubleBase64)이면
+        #   클러스터가 노드 생성 못 하고 영구 INPROGRESS(검증: single→스턱, double→2분 내 CP 노드). HTTPS tls 와는 분리.
+        #   (stringData 면 k8s 가 또 base64 → 깨짐, 금지). trust_enabled 기본 false 라 기존 동작 회귀 없음.
+        data:
           additional-ca-1: ${input.trust_base64}

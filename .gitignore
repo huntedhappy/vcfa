@@ -9,3 +9,6 @@ scripts/config.local.*
 
 # HAR 캡처 — Authorization Bearer 토큰/세션 포함되므로 커밋 금지
 *.har
+
+# 참조/스크래치 파일(인증서·개인키 포함) — 커밋 금지
+tmp/

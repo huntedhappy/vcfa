@@ -7,7 +7,6 @@ Cloud Assembly Cloud Template (YAML).
 | 파일 | 용도 | 짝이 되는 Form |
 |---|---|---|
 | `vm/blueprint_vm.yaml` | VM (표준) | `forms/vm/custom_vm.yml` |
-| `vm/blueprint_vm_storageclass_manual.yaml` | VM (스토리지 수동 입력) | `forms/vm/custom_vm_storageclass_manual.yml` |
 | `cluster/blueprint_vra_cluster.yaml` | K8s 게스트 클러스터 | `forms/cluster/custom_cluster.yml` |
 
 `archive/` 는 이전 버전 백업 — **운영 사용 금지**.

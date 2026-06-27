@@ -1,0 +1,162 @@
+formatVersion: 1
+# ============================================================================
+# Windows VM 블루프린트 (cloud 이미지 + cloudbase-init)
+# ★ 구조는 네이티브 vm-k2dk(검증됨: v1alpha5 + cloudInit.cloudConfig + 패스워드 시크릿)를 Windows 로 적용.
+#   - 이미지: getVMImage?os=windows (콘텐츠 라이브러리에 올린 Windows cloud 이미지, 예 win-2025-tmpl)
+#   - 부트스트랩: cloudbase-init (Windows 판 cloud-init) — Administrator 패스워드 + PowerShell runcmd
+#   - Linux 블루프린트의 apt/bash/nginx 대신 PowerShell/IIS 사용.
+# ⚠️ DRAFT: Windows 이미지에 cloudbase-init 이 설치돼 있어야 동작. cloudbase-init 의 users/passwd/runcmd
+#   처리 형식은 이미지 빌드에 따라 차이가 있을 수 있어, 네이티브로 Windows VM 1개 만들어 YAML 받아 최종 정렬 권장.
+#   cloudbase-init 이 없으면 bootstrap.sysprep 방식으로 전환 필요(별도).
+# ============================================================================
+inputs:
+  projects:
+    type: string
+    title: Project Name
+    $data: /data/vro-actions/com.vmk.dk/getProjectsNames
+  namespace:
+    type: string
+    title: Namespace Name
+    $data: /data/vro-actions/com.vmk.dk/getNamespaces?ProjectName={{projects}}
+  vmclass:
+    type: string
+    title: VM Class
+    $data: /data/vro-actions/com.vmk.dk/getVMClass?ProjectName={{projects}}&NamespaceName={{namespace}}
+  vmCount:
+    type: integer
+    title: VM 개수
+    default: 1
+    minimum: 1
+    maximum: 10
+  image:
+    type: string
+    title: VM Image (Windows)
+    description: 콘텐츠 라이브러리의 Windows cloud 이미지 (cloudbase-init 포함). 예 win-2025-tmpl
+    $data: /data/vro-actions/com.vmk.dk/getVMImage?os=windows
+  storageclass:
+    type: string
+    title: OS Disk Storage Class
+    $data: /data/vro-actions/com.vmk.dk/getStorageClass?ProjectName={{projects}}&NamespaceName={{namespace}}
+  hostname:
+    type: string
+    title: Computer Name
+    default: winvm
+    description: 'Windows 컴퓨터 이름. 예: winvm (NetBIOS 15자 제한 주의)'
+  domainname:
+    type: string
+    title: Domain Name
+    default: dtvcf.lab
+  dnsservers:
+    type: string
+    title: DNS Servers
+    description: '쉼표(,)로 여러 개. 예: 10.253.100.2,10.253.100.3'
+  adminPassword:
+    type: string
+    title: Administrator Password
+    description: '로컬 Administrator 비밀번호 (Windows 복잡도 정책 충족 필요). 평문 입력 가능.'
+    encrypted: true
+    writeOnly: true
+  timezone:
+    type: string
+    title: Timezone
+    default: Korea Standard Time
+    description: 'Windows 타임존 이름(예: Korea Standard Time). Linux 의 Asia/Seoul 과 형식 다름.'
+  enableIis:
+    type: boolean
+    title: Install IIS (Web-Server)
+    default: false
+    description: true 면 IIS 웹서버 설치(PowerShell Install-WindowsFeature Web-Server).
+  rdpPort:
+    type: integer
+    title: RDP LoadBalancer Port
+    default: 3389
+    description: 외부에서 RDP 접근할 LoadBalancer 포트.
+resources:
+  SupervisorNamespace:
+    type: CCI.Supervisor.Namespace
+    properties:
+      name: ${input.namespace}
+      existing: true
+  # Administrator 패스워드 시크릿 (vm-k2dk 와 동일 패턴: users[].passwd 가 이 시크릿 키를 참조)
+  BootstrapSecret:
+    type: CCI.Supervisor.Resource
+    properties:
+      context: ${resource.SupervisorNamespace.id}
+      manifest:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: win-bootstrap-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+          labels:
+            app.kubernetes.io/name: ${input.hostname}-${substring(env.deploymentId, 0, 8)}
+        stringData:
+          administrator-password: ${input.adminPassword}
+  # [확장] 단일 VM 고정으로 운영하려면 count 라인과 inputs.vmCount 를 함께 제거.
+  VirtualMachine:
+    type: CCI.Supervisor.Resource
+    count: '${input.vmCount}'
+    dependsOn:
+      - BootstrapSecret
+    properties:
+      context: ${resource.SupervisorNamespace.id}
+      manifest:
+        apiVersion: vmoperator.vmware.com/v1alpha3
+        kind: VirtualMachine
+        metadata:
+          name: ${input.hostname}-${substring(env.deploymentId, 0, 8)}
+          labels:
+            app.kubernetes.io/name: ${input.hostname}-${substring(env.deploymentId, 0, 8)}
+            vm-lb: vm-lb-selector-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+        spec:
+          className: ${input.vmclass}
+          imageName: ${input.image}
+          powerState: PoweredOn
+          storageClass: ${input.storageclass}
+          # [암호화 정책 호환] hardware 명시 (E2E 확인 — 없으면 암호화 reconfigure 실패)
+          hardware:
+            ideControllers:
+              - busNumber: 0
+              - busNumber: 1
+          # ★[Windows 2022] 네이티브 GOSC(bootstrap.sysprep) — 2022 는 OOBE 가 옛 방식이라 GOSC 가 정상 동작.
+          #   배포 폼의 Administrator 비번(BootstrapSecret)을 GOSC 가 배포 시점에 적용 → 빌드비번/guest-ops 헬퍼 불필요.
+          #   (2025 는 OOBE 변경으로 GOSC 가 "Hi there"에 멈춰 불가 → 별도 blueprint_vm_win_2025.yaml 의 no-bootstrap+헬퍼.)
+          network:
+            hostName: ${input.hostname}
+            nameservers: ${split(input.dnsservers, ",")}
+          bootstrap:
+            sysprep:
+              sysprep:
+                guiUnattended:
+                  autoLogon: false
+                  timeZone: 215   # Korea Standard Time
+                  password:
+                    name: win-bootstrap-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+                    key: administrator-password
+                identification:
+                  joinWorkgroup: WORKGROUP
+                userData:
+                  fullName: Administrator
+                  orgName: VCFA
+                # RDP 활성(+방화벽) — GUIRunOnce(첫 로그온 명령).
+                guiRunOnce:
+                  commands:
+                    - 'cmd /c reg add "HKLM\System\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f'
+                    - 'cmd /c netsh advfirewall firewall set rule group="remote desktop" new enable=Yes'
+  # LoadBalancer: RDP(3389) 항상 + enableIis=true 면 web(80) 포트 추가 (Linux 의 web LB 와 동일하게 IIS 노출).
+  #   IIS 실제 설치는 scripts/win2025-customize.sh 가 guest-ops 로(WIN_INSTALL_IIS=1). 단일 VIP 에 rdp+web 노출.
+  LoadBalancer:
+    type: CCI.Supervisor.Resource
+    dependsOn:
+      - VirtualMachine
+    properties:
+      context: ${resource.SupervisorNamespace.id}
+      manifest:
+        apiVersion: vmoperator.vmware.com/v1alpha3
+        kind: VirtualMachineService
+        metadata:
+          name: vm-lb-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+        spec:
+          selector:
+            vm-lb: vm-lb-selector-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+          type: LoadBalancer
+          ports: '${from_json("[{\"name\":\"rdp\",\"protocol\":\"TCP\",\"port\":" + input.rdpPort + ",\"targetPort\":3389}" + (input.enableIis ? ",{\"name\":\"web\",\"protocol\":\"TCP\",\"port\":80,\"targetPort\":80}" : "") + "]")}'

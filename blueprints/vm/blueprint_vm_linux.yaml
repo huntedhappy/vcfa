@@ -50,9 +50,13 @@ inputs:
     $data: /data/vro-actions/com.vmk.dk/getVMClass?ProjectName={{projects}}&NamespaceName={{namespace}}
   vmCount:
     type: integer
-    title: VM 개수
-    default: 2
-    description: 단일 VM 고정으로 사용하려면 vmCount 입력과 blueprint의 VirtualMachine.count 라인을 함께 제거하세요.
+    title: VM 개수 (단일 VM 전용)
+    default: 1
+    minimum: 1
+    maximum: 1
+    description: '[item3] 현재 템플릿은 단일 VM 전용입니다. VM/PVC/Secret/LB 의 이름·셀렉터에 per-index 가 없어
+      vmCount>1 이면 이름 충돌 및 같은 RWO PVC 공유가 발생합니다. 복수 VM 이 필요하면 각 리소스의 metadata.name/labels/
+      LB selector 를 index 기반(예 -${count.index})으로 바꾼 뒤 maximum 을 올리세요.'
   image:
     type: string
     title: VM Image
@@ -60,7 +64,7 @@ inputs:
   storageclass:
     type: string
     title: OS Disk Storage Class
-    $data: /data/vro-actions/com.vmk.dk/getStroageClassManual
+    $data: /data/vro-actions/com.vmk.dk/getStorageClass?ProjectName={{projects}}&NamespaceName={{namespace}}
   # [확장 옵션] OS Disk Resize (optional)
   # - enableOsDiskResize=true 일 때만 osDiskSize 값으로 OS(부팅) 디스크를 확장합니다.
   # - OS 디스크 확장 기능을 완전히 제거하려면 아래 2개 입력 + VM spec.advanced 블록 + cloud-init growpart/resize_rootfs 블록을 함께 제거하세요.
@@ -81,33 +85,33 @@ inputs:
   commonDataStorageclass:
     type: string
     title: Common Data Disk Storage Class
-    default: __inherit__
+    default: ''
     description: 공통 사용 시 모든 데이터 디스크에 적용됩니다. 비워두면 OS Disk Storage Class 값을 사용합니다.
-    $data: /data/vro-actions/com.vmk.dk/getStroageClassManualOptionals
+    $data: /data/vro-actions/com.vmk.dk/getStorageClassOptional?ProjectName={{projects}}&NamespaceName={{namespace}}
   dataStorageclass:
     type: string
     title: Data Disk 1 Storage Class
-    default: __inherit__
+    default: ''
     description: 개별 사용 시 Disk 1에 적용됩니다. 비워두면 OS Disk Storage Class 값을 사용합니다.
-    $data: /data/vro-actions/com.vmk.dk/getStroageClassManualOptionals
+    $data: /data/vro-actions/com.vmk.dk/getStorageClassOptional?ProjectName={{projects}}&NamespaceName={{namespace}}
   dataStorageclass2:
     type: string
     title: Data Disk 2 Storage Class
-    default: __inherit__
+    default: ''
     description: 개별 사용 시 Disk 2에 적용됩니다. 비워두면 Disk 1 또는 OS Disk Storage Class 값을 사용합니다.
-    $data: /data/vro-actions/com.vmk.dk/getStroageClassManualOptionals
+    $data: /data/vro-actions/com.vmk.dk/getStorageClassOptional?ProjectName={{projects}}&NamespaceName={{namespace}}
   dataStorageclass3:
     type: string
     title: Data Disk 3 Storage Class
-    default: __inherit__
+    default: ''
     description: 개별 사용 시 Disk 3에 적용됩니다. 비워두면 Disk 1 또는 OS Disk Storage Class 값을 사용합니다.
-    $data: /data/vro-actions/com.vmk.dk/getStroageClassManualOptionals
+    $data: /data/vro-actions/com.vmk.dk/getStorageClassOptional?ProjectName={{projects}}&NamespaceName={{namespace}}
   dataStorageclass4:
     type: string
     title: Data Disk 4 Storage Class
-    default: __inherit__
+    default: ''
     description: 개별 사용 시 Disk 4에 적용됩니다. 비워두면 Disk 1 또는 OS Disk Storage Class 값을 사용합니다.
-    $data: /data/vro-actions/com.vmk.dk/getStroageClassManualOptionals
+    $data: /data/vro-actions/com.vmk.dk/getStorageClassOptional?ProjectName={{projects}}&NamespaceName={{namespace}}
   dataDiskCount:
     type: integer
     title: Data Disk Count
@@ -247,22 +251,6 @@ inputs:
     type: boolean
     title: Enable SSH on LoadBalancer
     description: true면 Single VIP LoadBalancer에 SSH 포트를 추가합니다. false면 web 포트만 노출합니다.
-  manualVipEnabled:
-    type: boolean
-    title: Manual VIP Assignment
-    description: 현재 템플릿에서는 미사용됩니다. (Single VIP Static 모드 제거)
-  autoVipMode:
-    type: string
-    title: Auto VIP Mode
-    default: singleVipMultiPort
-    description: 현재 템플릿은 Single VIP + Multi Port(자동)만 사용합니다.
-    oneOf:
-      - title: Single VIP + Multi Port (자동)
-        const: singleVipMultiPort
-  sharedLbIp:
-    type: string
-    title: Shared LoadBalancer IP (Optional)
-    description: 현재 템플릿에서는 미사용됩니다. (Single VIP Static 모드 제거)
   sshServicePort:
     type: integer
     title: LoadBalancer SSH Port
@@ -278,6 +266,46 @@ inputs:
     title: Trusted Proxy CIDRs for XFF
     default: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
     description: Avi/LB가 전달하는 X-Forwarded-For를 신뢰할 CIDR 목록. 쉼표(,)로 구분.
+  # [HTTPS] Gateway API(avi-lb) 로 HTTPS 종료 — 네이티브 패턴(gateway.yaml): Gateway(HTTPS 443)+HTTPRoute+TLS Secret.
+  enableHttps:
+    type: boolean
+    title: Enable HTTPS (Gateway/Avi)
+    default: false
+    description: true 면 TLS Secret + Gateway(avi-lb, HTTPS 443) + HTTPRoute 를 생성해 HTTPS 로 서비스합니다. cert/key 필요.
+  httpsHostname:
+    type: string
+    title: HTTPS Hostname
+    default: ''
+    description: 'HTTPS 리스너/라우트 hostname(SNI). 비우면 <hostname>.<domainname> 사용.'
+  httpsCert:
+    type: string
+    title: HTTPS Certificate (PEM)
+    default: ''
+    description: 'TLS 인증서(PEM, -----BEGIN CERTIFICATE-----). enableHttps 시 필수. self-signed 도 직접 생성해 붙여넣기 가능.'
+  httpsKey:
+    type: string
+    title: HTTPS Private Key (PEM)
+    default: ''
+    description: 'TLS 개인키(PEM, -----BEGIN PRIVATE KEY-----). enableHttps 시 필수. (Secret data.tls.key 로 저장됨)'
+  # [숨김] PEM → base64(form 의 '+'→공백 복구 포함, doubleBase64 액션). TLS Secret 의 data.tls.crt/tls.key 에 사용.
+  httpsCertB64:
+    type: string
+    default: ''
+    $dynamicDefault: /data/vro-actions/com.vmk.dk/doubleBase64?TrustCA={{httpsCert}}
+  httpsKeyB64:
+    type: string
+    default: ''
+    $dynamicDefault: /data/vro-actions/com.vmk.dk/doubleBase64?TrustCA={{httpsKey}}
+  httpsVipType:
+    type: string
+    title: HTTPS VIP Type (Gateway)
+    default: private
+    description: 'Gateway(avi-lb) VIP 유형. private=내부 VIP(lb-vip-type 주석 삽입), public=외부 VIP(주석 없음).'
+    oneOf:
+      - title: private (내부 VIP)
+        const: private
+      - title: public (외부 VIP)
+        const: public
 resources:
   SupervisorNamespace:
     type: CCI.Supervisor.Namespace
@@ -389,6 +417,12 @@ resources:
           imageName: ${input.image}
           powerState: PoweredOn
           storageClass: ${input.storageclass}
+          # [암호화 정책 호환] hardware 를 spec 에 명시 — 없으면 vm-operator 가 컨트롤러를 사후 add 하다
+          #   암호화 스토리지 정책에서 "device sans crypto spec" reconfigure 거부로 파워온 실패(E2E 검증).
+          hardware:
+            ideControllers:
+              - busNumber: 0
+              - busNumber: 1
           # [확장 옵션] OS Boot Disk Resize
           # - 확장 기능을 쓰지 않으면 아래 advanced 블록을 제거할 수 있습니다.
           advanced: '${input.enableOsDiskResize ? from_json("{\"bootDiskCapacity\":\"" + input.osDiskSize + "\"}") : from_json("{}")}'
@@ -1416,10 +1450,10 @@ resources:
               - - bash
                 - '-lc'
                 - /usr/local/sbin/disk-init.sh
-  # [Domain: Primary LoadBalancer]
-  # - Single VIP 고정
-  # - enableSshLb=true: web/ssh를 단일 LB에 함께 노출
-  LoadBalancerSingleVipMultiPort:
+  # [Domain: Web Service] — 항상 생성. enableHttps=false → LoadBalancer(web VIP), true → ClusterIP(Gateway 백엔드, VIP 미생성).
+  #   HTTPS 시 외부 VIP 는 Gateway(443) 하나만 — web(80) 중복 VIP 방지(사용자 요청 2026-06-27). HttpsRoute 백엔드는 이 vm-lb 서비스.
+  #   ★ ClusterIP 일 때 Avi Gateway(ako)가 이 서비스 엔드포인트(VM)로 라우팅하는지 실배포 검증 필요.
+  WebService:
     type: CCI.Supervisor.Resource
     dependsOn:
       - VirtualMachine
@@ -1430,6 +1464,27 @@ resources:
         kind: VirtualMachineService
         metadata:
           name: vm-lb-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+        spec:
+          selector:
+            vm-lb: vm-lb-selector-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+          type: '${input.enableHttps == true ? "ClusterIP" : "LoadBalancer"}'
+          ports:
+            - name: web
+              protocol: TCP
+              port: ${input.servicePort}
+              targetPort: ${input.webTargetPort}
+  # [Domain: SSH LoadBalancer] — enableSshLb=true 일 때만, web 과 별도 VIP(ssh 22 전용). (사용자: SSH 는 별도로)
+  SshLb:
+    type: CCI.Supervisor.Resource
+    dependsOn:
+      - VirtualMachine
+    properties:
+      context: ${resource.SupervisorNamespace.id}
+      manifest:
+        apiVersion: vmoperator.vmware.com/v1alpha3
+        kind: VirtualMachineService
+        metadata:
+          name: vm-ssh-lb-${input.hostname}-${substring(env.deploymentId, 0, 8)}
         spec:
           selector:
             vm-lb: vm-lb-selector-${input.hostname}-${substring(env.deploymentId, 0, 8)}
@@ -1439,89 +1494,81 @@ resources:
               protocol: TCP
               port: ${input.sshServicePort}
               targetPort: ${input.sshTargetPort}
-            - name: web
-              protocol: TCP
-              port: ${input.servicePort}
-              targetPort: ${input.webTargetPort}
       count: '${input.enableSshLb == true ? 1 : 0}'
-  # - enableSshLb=false: web 전용 단일 LB
-  LoadBalancerWebOnly:
+  # [HTTPS / Domain: Gateway API TLS] — enableHttps 시에만 생성(네이티브 gateway.yaml 패턴: avi-lb HTTPS 443).
+  #   ① kubernetes.io/tls Secret(cert/key) ② Gateway(HTTPS 443, certificateRefs→Secret) ③ HTTPRoute(→web VM 서비스).
+  HttpsTlsSecret:
     type: CCI.Supervisor.Resource
     dependsOn:
       - VirtualMachine
-    condition: ${!input.enableSshLb}
     properties:
       context: ${resource.SupervisorNamespace.id}
       manifest:
-        apiVersion: vmoperator.vmware.com/v1alpha3
-        kind: VirtualMachineService
+        apiVersion: v1
+        kind: Secret
         metadata:
-          name: vm-lb-${input.hostname}-${substring(env.deploymentId, 0, 8)}
-        spec:
-          selector:
-            vm-lb: vm-lb-selector-${input.hostname}-${substring(env.deploymentId, 0, 8)}
-          type: LoadBalancer
-          ports:
-            - name: web
-              protocol: TCP
-              port: ${input.servicePort}
-              targetPort: ${input.webTargetPort}
-      count: '${input.enableSshLb != true ? 1 : 0}'
-  # [Domain: Web Health Check Job]
-  # 배포 후 Web LB 헬스체크 검증용입니다. 사후 검증이 불필요하면 이 Job 리소스를 제거할 수 있습니다.
-  ServiceHealthCheckJob:
+          name: vm-tls-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+        type: kubernetes.io/tls
+        data:
+          tls.crt: ${input.httpsCertB64}
+          tls.key: ${input.httpsKeyB64}
+    count: '${input.enableHttps == true ? 1 : 0}'
+  HttpsGateway:
     type: CCI.Supervisor.Resource
     dependsOn:
-      - LoadBalancerSingleVipMultiPort
-      - LoadBalancerWebOnly
+      - HttpsTlsSecret
     properties:
       context: ${resource.SupervisorNamespace.id}
       manifest:
-        apiVersion: batch/v1
-        kind: Job
+        apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
         metadata:
-          name: check-service-${input.hostname}-${substring(env.deploymentId, 0, 8)}
-          labels:
-            app.kubernetes.io/name: ${input.hostname}-${substring(env.deploymentId, 0, 8)}
-            app.kubernetes.io/component: service-healthcheck
+          name: vm-gw-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+          # [httpsVipType] private 면 lb-vip-type 주석 삽입(내부 VIP), public 이면 주석 없음(빈 맵=외부 VIP 기본).
+          annotations: '${from_json(input.httpsVipType == "private" ? "{\"networking.vmware.com/lb-vip-type\":\"private\"}" : "{}")}'
         spec:
-          ttlSecondsAfterFinished: 120
-          backoffLimit: 0
-          activeDeadlineSeconds: 900
-          template:
-            metadata:
-              labels:
-                app.kubernetes.io/name: ${input.hostname}-${substring(env.deploymentId, 0, 8)}
-                app.kubernetes.io/component: service-healthcheck
-            spec:
-              restartPolicy: Never
-              terminationGracePeriodSeconds: 5
-              containers:
-                - name: checker
-                  image: busybox:latest
-                  command:
-                    - /bin/sh
-                    - '-c'
-                  args:
-                    - |
-                      set -eu
-
-                      TARGET="http://vm-lb-${input.hostname}-${substring(env.deploymentId, 0, 8)}:${input.servicePort}/healthz.txt"
-                      MARKER="VCFA-READY-${substring(env.deploymentId, 0, 8)}"
-
-                      echo "Waiting for Web Service to be ready..."
-                      i=0
-                      while true; do
-                        if wget -q -T 5 -O - "$TARGET" | grep -q "$MARKER"; then
-                          echo "Service is UP and Ready!"
-                          exit 0
-                        fi
-
-                        i=$((i+1))
-                        echo "Service not ready yet. Retrying in 10 seconds... ($i)"
-                        sleep 10
-                      done
-      wait:
-        conditions:
-          - type: Complete
-            status: 'True'
+          gatewayClassName: avi-lb
+          listeners:
+            - name: https
+              protocol: HTTPS
+              port: 443
+              hostname: "${input.httpsHostname != '' ? input.httpsHostname : input.hostname + '.' + input.domainname}"
+              tls:
+                certificateRefs:
+                  - kind: Secret
+                    group: ''
+                    name: vm-tls-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+    count: '${input.enableHttps == true ? 1 : 0}'
+  HttpsRoute:
+    type: CCI.Supervisor.Resource
+    dependsOn:
+      - HttpsGateway
+    properties:
+      context: ${resource.SupervisorNamespace.id}
+      manifest:
+        apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: vm-route-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+        spec:
+          parentRefs:
+            - name: vm-gw-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+              sectionName: https
+          hostnames:
+            - "${input.httpsHostname != '' ? input.httpsHostname : input.hostname + '.' + input.domainname}"
+          rules:
+            - backendRefs:
+                - kind: Service
+                  name: vm-lb-${input.hostname}-${substring(env.deploymentId, 0, 8)}
+                  port: ${input.servicePort}
+    count: '${input.enableHttps == true ? 1 : 0}'
+  # [HTTPS redirect 제거] HTTP→HTTPS 자동 리다이렉트는 이 Avi(ako)에서 미지원 — Gateway API RequestRedirect 의
+  #   scheme:https 를 Avi 가 적용 안 함(Location 이 http 유지). L4Rule/ApplicationProfile/(HTTPRule 부재) 어디에도
+  #   redirect 필드 없음. 필요 시 Avi 컨트롤러의 DataScript/HTTPPolicySet 으로(=Avi 관리자 작업). 따라서 제거.
+  #   → enableHttps 시 Gateway 는 HTTPS(443)만, HTTP 는 web LoadBalancer(별도 VIP)로 제공.
+  # [Domain: Web Health Check Job] — 제거됨 (2026-06-27, E2E 검증)
+  #   파드 기반 헬스체크는 이 Supervisor 환경에서 구조적으로 불가:
+  #   파드가 VirtualMachineService 의 ClusterIP/서비스명으로 VM 백엔드(172.28.x)에 라우팅되지 않음
+  #   (DNS FQDN 은 풀리나 HTTP 연결 timeout — NXDOMAIN 아님). 외부 LB IP 로는 정상.
+  #   → 배포 완료는 VirtualMachine 의 wait(VirtualMachineNetworkReady + VirtualMachineBootstrapReady)
+  #     로 판정. 앱 준비성은 cloud-init 의 self `curl 127.0.0.1/healthz.txt` 로 자체 검증/로깅됨.

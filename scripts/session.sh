@@ -49,6 +49,7 @@ unset _VCFA_ENV_ARG _VCFA_ENV_FILE
 source "${_VCFA_SCRIPT_DIR}/vcfa-api-lib.sh"
 source "${_VCFA_SCRIPT_DIR}/vcfa-vro-package-lib.sh"
 source "${_VCFA_SCRIPT_DIR}/vcfa-content-lib.sh"
+source "${_VCFA_SCRIPT_DIR}/vcfa-infra-lib.sh"
 
 # 3) 기존 TOKEN 검증 — sessions/current 호출해서 200 아니면 무효 → unset 후 재로그인
 if [[ -n "${TOKEN:-}" ]]; then

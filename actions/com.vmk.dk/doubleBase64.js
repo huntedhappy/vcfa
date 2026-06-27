@@ -1,5 +1,12 @@
 # Return type: string
 # Inputs: TrustCA (string)
+# ★ 동작: PEM 의 공백→'+' 복구 후 base64 를 **1회** 인코딩 → base64(PEM) 반환.
+#   (이름 'doubleBase64' 는 레거시 — 실제로는 단일 base64. Secret 의 `data.*` 에 그대로 넣으면
+#    소비자가 k8s 디코드 시 PEM 을 얻음. stringData 에 넣으면 k8s 가 한 겹 더 씌워 이중인코딩 버그 → 금지. [item7])
+#   ★[2026-06-27 수정] 경계줄 보존을 CERTIFICATE 뿐 아니라 모든 PEM 타입으로 확장.
+#    기존엔 'BEGIN CERTIFICATE' 만 헤더로 인식 → 개인키 '-----BEGIN PRIVATE KEY-----' 의 내부 공백이
+#    '+' 로 치환돼 '-----BEGIN+PRIVATE+KEY-----' 로 깨짐 → kubernetes.io/tls Secret(HTTPS) 생성 실패.
+#    이제 '-----BEGIN'/'-----END' 로 시작하는 줄은 종류(PRIVATE KEY/RSA PRIVATE KEY/EC/CERTIFICATE)와 무관히 원형 보존.
 import base64
 import hashlib
 
@@ -25,8 +32,9 @@ def handler(context, inputs):
     fixed_lines = []
     
     for line in lines:
-        # 헤더나 푸터는 그대로 유지
-        if "BEGIN CERTIFICATE" in line or "END CERTIFICATE" in line:
+        # PEM 경계줄(-----BEGIN.../-----END...)은 종류 무관 원형 유지.
+        #   개인키 'BEGIN PRIVATE KEY' 등 내부 공백이 '+' 로 치환되는 손상 방지.
+        if line.strip().startswith("-----BEGIN") or line.strip().startswith("-----END"):
             fixed_lines.append(line)
         else:
             # 1. 줄바꿈 문자만 확실히 제거
