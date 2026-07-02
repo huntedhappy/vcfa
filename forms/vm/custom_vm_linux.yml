@@ -602,8 +602,8 @@ layout:
                 read-only: false
         - id: 10. HTTPS Gateway
           fields:
-            - id: enableHttps
-              display: checkbox
+            - id: httpsMode
+              display: dropDown
               state:
                 visible: true
                 read-only: false
@@ -613,7 +613,13 @@ layout:
                 read-only: false
                 visible:
                   - equals:
-                      enableHttps: true
+                      httpsMode: 'off'
+                    value: false
+                  - equals:
+                      httpsMode: existing
+                    value: true
+                  - equals:
+                      httpsMode: paste
                     value: true
             - id: httpsVipType
               display: dropDown
@@ -621,15 +627,41 @@ layout:
                 read-only: false
                 visible:
                   - equals:
-                      enableHttps: true
+                      httpsMode: 'off'
+                    value: false
+                  - equals:
+                      httpsMode: existing
                     value: true
+                  - equals:
+                      httpsMode: paste
+                    value: true
+            - id: httpsTlsSecret
+              display: dropDown
+              state:
+                read-only: false
+                visible:
+                  - equals:
+                      httpsMode: 'off'
+                    value: false
+                  - equals:
+                      httpsMode: existing
+                    value: true
+                  - equals:
+                      httpsMode: paste
+                    value: false
             - id: httpsCert
               display: textArea
               state:
                 read-only: false
                 visible:
                   - equals:
-                      enableHttps: true
+                      httpsMode: 'off'
+                    value: false
+                  - equals:
+                      httpsMode: existing
+                    value: false
+                  - equals:
+                      httpsMode: paste
                     value: true
             - id: httpsKey
               display: textArea
@@ -637,7 +669,13 @@ layout:
                 read-only: false
                 visible:
                   - equals:
-                      enableHttps: true
+                      httpsMode: 'off'
+                    value: false
+                  - equals:
+                      httpsMode: existing
+                    value: false
+                  - equals:
+                      httpsMode: paste
                     value: true
             - id: httpsCertB64
               display: textField
@@ -1166,14 +1204,21 @@ schema:
       dataType: string
       isMultiple: false
     default: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
-  enableHttps:
-    label: Enable HTTPS (Gateway/Avi)
-    description: 'true 면 TLS Secret + Gateway(avi-lb HTTPS 443) + HTTPRoute 생성. cert/key 필요.'
-    signpost: 'true 면 TLS Secret + Gateway(avi-lb HTTPS 443) + HTTPRoute 생성. cert/key 필요.'
+  httpsMode:
+    label: HTTPS (Gateway/Avi)
+    description: 'off=HTTPS 안 함. existing=기존 TLS Secret 선택. paste=인증서 PEM 직접 입력. existing/paste 면 Gateway(avi-lb 443)+HTTPRoute 생성.'
+    signpost: 'off=안 함 / existing=기존 Secret 선택 / paste=PEM 직접 입력. SSH LoadBalancer 와 무관한 별도 옵션.'
     type:
-      dataType: boolean
+      dataType: string
       isMultiple: false
-    default: false
+    default: 'off'
+    valueList:
+      - value: 'off'
+        label: 사용 안 함
+      - value: existing
+        label: 기존 인증서 선택 (네임스페이스 TLS Secret)
+      - value: paste
+        label: 인증서 직접 입력 (PEM)
   httpsHostname:
     label: HTTPS Hostname
     description: '비우면 <hostname>.<domainname> 사용(SNI).'
@@ -1181,20 +1226,55 @@ schema:
       dataType: string
       isMultiple: false
     default: ''
+  httpsTlsSecret:
+    label: HTTPS Certificate (기존 TLS Secret)
+    description: '선택한 namespace 의 kubernetes.io/tls Secret 목록. httpsMode=existing 시 필수. (미리 만들어 둔 인증서 Secret 선택)'
+    signpost: '네임스페이스에 이미 있는 TLS Secret 을 인증서로 사용합니다.'
+    type:
+      dataType: string
+      isMultiple: false
+    valueList:
+      id: /data/vro-actions/com.vmk.dk/getTlsSecrets
+      type: dynamic
+      parameters:
+        - $type:
+            dataType: string
+            isMultiple: false
+          ProjectName: projects
+        - $type:
+            dataType: string
+            isMultiple: false
+          NamespaceName: namespace
+      isPageable: false
+    constraints:
+      required:
+        - equals:
+            httpsMode: existing
+          value: true
   httpsCert:
     label: HTTPS Certificate (PEM)
-    description: 'TLS 인증서 PEM(-----BEGIN CERTIFICATE-----). enableHttps 시 필수.'
+    description: 'TLS 인증서 PEM(-----BEGIN CERTIFICATE-----). httpsMode=paste 시 필수.'
     type:
       dataType: string
       isMultiple: false
     default: ''
+    constraints:
+      required:
+        - equals:
+            httpsMode: paste
+          value: true
   httpsKey:
     label: HTTPS Private Key (PEM)
-    description: 'TLS 개인키 PEM(-----BEGIN PRIVATE KEY-----). enableHttps 시 필수.'
+    description: 'TLS 개인키 PEM(-----BEGIN PRIVATE KEY-----). httpsMode=paste 시 필수.'
     type:
       dataType: string
       isMultiple: false
     default: ''
+    constraints:
+      required:
+        - equals:
+            httpsMode: paste
+          value: true
   httpsCertB64:
     label: (internal) HTTPS Cert base64
     type:

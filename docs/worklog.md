@@ -579,3 +579,23 @@ scripts/win2025-customize.sh <hostname> <new-admin-pass> <static-ip> [gw] [prefi
 | VKS 클러스터 | blueprint_vks_cluster.yaml | vks_cluster.yaml | vks_cluster |
 
 옛 카탈로그(vm/vm_windows/vm_windows_2022/vra_cluster) 삭제 후 새 이름으로 재배포. (clean-deploy.sh 는 blueprints/ 전체 순회라 자동 반영.)
+
+---
+
+## 2026-07-02 — Linux VM HTTPS: SSH 분리 + 인증서 필수 + 기존 TLS Secret 선택 (E2E 검증)
+
+- **상태**: DONE (라이브 배포·검증 완료)
+- **배경(사용자 이슈)**: ① L4/L7 에서 SSH 를 켜야 HTTPS 가 보이는 것처럼 커플링돼 보임 ② HTTPS 켜도 인증서가 필수로 강제 안 됨 ③ 인증서를 PEM 붙여넣기 대신 **미리 만들어진 리스트에서 선택**하고 싶음.
+- **한 일**:
+  - `enableHttps`(체크박스) → **`httpsMode` 3-state**(`off`/`existing`/`paste`)로 전환. 모든 HTTPS 하위 필드를 **단일 변수 visibility 스위치**(이 빌드에서 유일하게 검증된 패턴)로 제어 → SSH LB 와 완전 분리(#1 재발 방지).
+  - 인증서 **조건부 required**: `httpsCert`/`httpsKey`=paste 시 필수, `httpsTlsSecret`=existing 시 필수 (`constraints.required` 를 visible 과 동일한 조건식으로).
+  - 신규 vRO `$data` 액션 **`getTlsSecrets`**: 선택 namespace 의 `kubernetes.io/tls` Secret 목록. supervisornamespace URN → `/proxy/k8s/namespaces/<URN>/api/v1/namespaces/<ns>/secrets` (getOSSelector/getContentsLibrary 와 동일 proxy 패턴, VCFA UI HAR 로 경로 확인). 실패 시 `[]`.
+  - 블루프린트: `HttpsTlsSecret` 생성은 `paste` 일 때만(existing 은 기존 Secret 재사용), Gateway `certificateRefs.name` = `existing ? httpsTlsSecret : 생성 secret`, Web/Gateway/Route count 를 `httpsMode != "off"` 로.
+- **수정한 파일**: [actions/com.vmk.dk/getTlsSecrets.js](../actions/com.vmk.dk/getTlsSecrets.js)(신규), [forms/vm/custom_vm_linux.yml](../forms/vm/custom_vm_linux.yml), [blueprints/vm/blueprint_vm_linux.yaml](../blueprints/vm/blueprint_vm_linux.yaml)
+- **검증**(라이브):
+  - `getTlsSecrets` import OK(201). `default-project/hh-ns-zqbhb` → TLS Secret **4개**(HAR 과 정확히 일치), `vcfa-7f4cv` → 33개. **RBAC OK** — VCFA:Host Shared-Session 토큰이 secret LIST 가능.
+  - `content_publish` → blueprint valid=true → **RELEASED** `v20260702.044306` → catalog `vm_linux` 등록. **400 없음**.
+  - released 폼 되읽기: `httpsMode` 3-state·조건부 required(existing/paste)·visibility 스위치 **전부 서버에 보존** 확인 → 이 빌드가 조건부 `constraints.required` 를 지원함을 확정.
+- **남은 작업(브라우저/실배포 한정)**: 카탈로그 폼의 실제 렌더링(3-state 표시·조건부 노출)과 required 제출 차단은 UI 에서 최종 확인 권장. httpsMode=existing 으로 실 VM 배포해 Gateway 가 선택 Secret 을 참조하는지 E2E 는 미실행(실 리소스 생성).
+- **중복 방지 메모**: HTTPS 섹션은 **Linux 폼/블루프린트에만** 존재(win 2022/2025 엔 없음). 인증서 드롭다운 액션은 `getTlsSecrets` 하나로 namespace scope.
+- **주의사항**: getTlsSecrets 는 throw 금지(항상 `[]` 로 degrade). 조건부 required 는 hidden 필드 미검증에 의존하지 않고 조건식 자체로 강제.

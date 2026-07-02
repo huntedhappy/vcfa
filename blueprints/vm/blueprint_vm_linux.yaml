@@ -267,26 +267,39 @@ inputs:
     default: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
     description: Avi/LB가 전달하는 X-Forwarded-For를 신뢰할 CIDR 목록. 쉼표(,)로 구분.
   # [HTTPS] Gateway API(avi-lb) 로 HTTPS 종료 — 네이티브 패턴(gateway.yaml): Gateway(HTTPS 443)+HTTPRoute+TLS Secret.
-  enableHttps:
-    type: boolean
-    title: Enable HTTPS (Gateway/Avi)
-    default: false
-    description: true 면 TLS Secret + Gateway(avi-lb, HTTPS 443) + HTTPRoute 를 생성해 HTTPS 로 서비스합니다. cert/key 필요.
+  #   httpsMode: off=안 함 / existing=기존 TLS Secret(httpsTlsSecret) 재사용 / paste=PEM 직접 입력→Secret 생성. (SSH LB 와 무관한 별도 옵션)
+  httpsMode:
+    type: string
+    title: HTTPS (Gateway/Avi)
+    default: 'off'
+    description: 'off=HTTPS 안 함 / existing=기존 TLS Secret 선택 / paste=인증서 PEM 직접 입력. existing·paste 면 Gateway(avi-lb 443)+HTTPRoute 생성.'
+    oneOf:
+      - title: 사용 안 함
+        const: 'off'
+      - title: 기존 인증서 선택 (네임스페이스 TLS Secret)
+        const: existing
+      - title: 인증서 직접 입력 (PEM)
+        const: paste
   httpsHostname:
     type: string
     title: HTTPS Hostname
     default: ''
     description: 'HTTPS 리스너/라우트 hostname(SNI). 비우면 <hostname>.<domainname> 사용.'
+  httpsTlsSecret:
+    type: string
+    title: HTTPS Certificate (기존 TLS Secret)
+    default: ''
+    description: 'httpsMode=existing 시 사용할 기존 kubernetes.io/tls Secret 이름(선택한 namespace). Gateway certificateRefs 로 직접 참조(신규 Secret 미생성).'
   httpsCert:
     type: string
     title: HTTPS Certificate (PEM)
     default: ''
-    description: 'TLS 인증서(PEM, -----BEGIN CERTIFICATE-----). enableHttps 시 필수. self-signed 도 직접 생성해 붙여넣기 가능.'
+    description: 'TLS 인증서(PEM, -----BEGIN CERTIFICATE-----). httpsMode=paste 시 필수. self-signed 도 직접 생성해 붙여넣기 가능.'
   httpsKey:
     type: string
     title: HTTPS Private Key (PEM)
     default: ''
-    description: 'TLS 개인키(PEM, -----BEGIN PRIVATE KEY-----). enableHttps 시 필수. (Secret data.tls.key 로 저장됨)'
+    description: 'TLS 개인키(PEM, -----BEGIN PRIVATE KEY-----). httpsMode=paste 시 필수. (Secret data.tls.key 로 저장됨)'
   # [숨김] PEM → base64(form 의 '+'→공백 복구 포함, doubleBase64 액션). TLS Secret 의 data.tls.crt/tls.key 에 사용.
   httpsCertB64:
     type: string
@@ -1450,7 +1463,7 @@ resources:
               - - bash
                 - '-lc'
                 - /usr/local/sbin/disk-init.sh
-  # [Domain: Web Service] — 항상 생성. enableHttps=false → LoadBalancer(web VIP), true → ClusterIP(Gateway 백엔드, VIP 미생성).
+  # [Domain: Web Service] — 항상 생성. httpsMode=off → LoadBalancer(web VIP), existing/paste → ClusterIP(Gateway 백엔드, VIP 미생성).
   #   HTTPS 시 외부 VIP 는 Gateway(443) 하나만 — web(80) 중복 VIP 방지(사용자 요청 2026-06-27). HttpsRoute 백엔드는 이 vm-lb 서비스.
   #   ★ ClusterIP 일 때 Avi Gateway(ako)가 이 서비스 엔드포인트(VM)로 라우팅하는지 실배포 검증 필요.
   WebService:
@@ -1467,7 +1480,7 @@ resources:
         spec:
           selector:
             vm-lb: vm-lb-selector-${input.hostname}-${substring(env.deploymentId, 0, 8)}
-          type: '${input.enableHttps == true ? "ClusterIP" : "LoadBalancer"}'
+          type: '${input.httpsMode != "off" ? "ClusterIP" : "LoadBalancer"}'
           ports:
             - name: web
               protocol: TCP
@@ -1495,8 +1508,9 @@ resources:
               port: ${input.sshServicePort}
               targetPort: ${input.sshTargetPort}
       count: '${input.enableSshLb == true ? 1 : 0}'
-  # [HTTPS / Domain: Gateway API TLS] — enableHttps 시에만 생성(네이티브 gateway.yaml 패턴: avi-lb HTTPS 443).
-  #   ① kubernetes.io/tls Secret(cert/key) ② Gateway(HTTPS 443, certificateRefs→Secret) ③ HTTPRoute(→web VM 서비스).
+  # [HTTPS / Domain: Gateway API TLS] — httpsMode!=off 시 생성(네이티브 gateway.yaml 패턴: avi-lb HTTPS 443).
+  #   ① kubernetes.io/tls Secret(cert/key) — httpsMode=paste 일 때만 생성(existing 은 기존 Secret 재사용).
+  #   ② Gateway(HTTPS 443, certificateRefs→Secret) ③ HTTPRoute(→web VM 서비스).
   HttpsTlsSecret:
     type: CCI.Supervisor.Resource
     dependsOn:
@@ -1512,7 +1526,7 @@ resources:
         data:
           tls.crt: ${input.httpsCertB64}
           tls.key: ${input.httpsKeyB64}
-    count: '${input.enableHttps == true ? 1 : 0}'
+    count: '${input.httpsMode == "paste" ? 1 : 0}'
   HttpsGateway:
     type: CCI.Supervisor.Resource
     dependsOn:
@@ -1535,10 +1549,11 @@ resources:
               hostname: "${input.httpsHostname != '' ? input.httpsHostname : input.hostname + '.' + input.domainname}"
               tls:
                 certificateRefs:
+                  # existing=기존 TLS Secret 직접 참조 / paste=위에서 생성한 vm-tls-* Secret
                   - kind: Secret
                     group: ''
-                    name: vm-tls-${input.hostname}-${substring(env.deploymentId, 0, 8)}
-    count: '${input.enableHttps == true ? 1 : 0}'
+                    name: '${input.httpsMode == "existing" ? input.httpsTlsSecret : "vm-tls-" + input.hostname + "-" + substring(env.deploymentId, 0, 8)}'
+    count: '${input.httpsMode != "off" ? 1 : 0}'
   HttpsRoute:
     type: CCI.Supervisor.Resource
     dependsOn:
@@ -1561,11 +1576,11 @@ resources:
                 - kind: Service
                   name: vm-lb-${input.hostname}-${substring(env.deploymentId, 0, 8)}
                   port: ${input.servicePort}
-    count: '${input.enableHttps == true ? 1 : 0}'
+    count: '${input.httpsMode != "off" ? 1 : 0}'
   # [HTTPS redirect 제거] HTTP→HTTPS 자동 리다이렉트는 이 Avi(ako)에서 미지원 — Gateway API RequestRedirect 의
   #   scheme:https 를 Avi 가 적용 안 함(Location 이 http 유지). L4Rule/ApplicationProfile/(HTTPRule 부재) 어디에도
   #   redirect 필드 없음. 필요 시 Avi 컨트롤러의 DataScript/HTTPPolicySet 으로(=Avi 관리자 작업). 따라서 제거.
-  #   → enableHttps 시 Gateway 는 HTTPS(443)만, HTTP 는 web LoadBalancer(별도 VIP)로 제공.
+  #   → httpsMode!=off 시 Gateway 는 HTTPS(443)만, HTTP 는 web LoadBalancer(별도 VIP)로 제공.
   # [Domain: Web Health Check Job] — 제거됨 (2026-06-27, E2E 검증)
   #   파드 기반 헬스체크는 이 Supervisor 환경에서 구조적으로 불가:
   #   파드가 VirtualMachineService 의 ClusterIP/서비스명으로 VM 백엔드(172.28.x)에 라우팅되지 않음
