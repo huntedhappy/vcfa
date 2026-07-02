@@ -290,6 +290,8 @@ inputs:
     title: HTTPS Certificate (기존 TLS Secret)
     default: ''
     description: 'httpsMode=existing 시 사용할 기존 kubernetes.io/tls Secret 이름(선택한 namespace). Gateway certificateRefs 로 직접 참조(신규 Secret 미생성).'
+    # ★ 블루프린트에도 $data 참조가 있어야 카탈로그가 이 데이터소스를 인가함(없으면 폼 드롭다운이 403).
+    $data: /data/vro-actions/com.vmk.dk/getTlsSecrets?ProjectName={{projects}}&NamespaceName={{namespace}}
   httpsCert:
     type: string
     title: HTTPS Certificate (PEM)

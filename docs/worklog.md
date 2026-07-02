@@ -614,3 +614,15 @@ scripts/win2025-customize.sh <hostname> <new-admin-pass> <static-ip> [gw] [prefi
 - **검증**: getTlsSecrets 재import OK(200). (a) namespace 미선택→placeholder, (b) hh-ns-zqbhb→실 secret 4개 확인. content_publish→RELEASED `v20260702.050825`.
 - **범위 밖(고칠 수 없음)**: ④ Private Key 크기 — httpsCert/httpsKey 가 폼 YAML 에서 이미 완전 동일(둘 다 textArea)인데 VCFA 가 다르게 렌더 → 폼 파일로 조정 불가(VCFA UI). ③ 의 최종 줄바꿈 위치도 VCFA CSS 소관(라벨 단축으로 완화만).
 - **주의사항**: 동적 드롭다운은 **빈 배열 반환 금지** — 최소 1개 placeholder 로 렌더 유지(이 빌드 특성). getStorageClassOptional 패턴과 동일.
+
+---
+
+## 2026-07-02 (이어서2) — TLS 드롭다운 403 근본원인: 카탈로그는 블루프린트 $data 로 데이터소스 인가
+
+- **상태**: DONE (라이브 검증 — 403→200)
+- **증상**: New Request(카탈로그) 폼에서 VM Class·Storage Class 는 뜨는데 HTTPS Certificate(기존 TLS Secret) 드롭다운만 빈 채. (조건부 필드/타임아웃/권한/포맷 전부 배제됨.)
+- **근본원인**(HAR `cert1.har` 로 확정): 카탈로그 데이터소스 호출 `GET /catalog/api/items/{id}/versions/{ver}/data/vro-actions/com.vmk.dk/getTlsSecrets?...` 가 **403 Forbidden**. 같은 파라미터의 getStorageClass 는 200. 차이 = **getTlsSecrets 는 폼 valueList 에만 있고 블루프린트에 `$data` 참조가 없었음**. 카탈로그는 **블루프린트의 `$data` 참조 목록으로 데이터소스를 인가**하므로 미참조 액션은 403. (vRO 액션 권한·output-type 은 getStorageClass 와 동일했음 — 권한 문제 아님.)
+- **한 일**: 블루프린트 `httpsTlsSecret` 입력에 `$data: /data/vro-actions/com.vmk.dk/getTlsSecrets?ProjectName={{projects}}&NamespaceName={{namespace}}` 추가 (다른 드롭다운과 동일 패턴).
+- **수정한 파일**: [blueprints/vm/blueprint_vm_linux.yaml](../blueprints/vm/blueprint_vm_linux.yaml)
+- **검증**: 재release `v20260702.060605`. 카탈로그 데이터소스 직접 호출 → getStorageClass 200 / **getTlsSecrets 200, items=33**(vcfa-7f4cv).
+- **주의사항(재사용)**: **폼 드롭다운의 동적 $data 액션은 반드시 블루프린트에도 `$data` 로 참조돼야 카탈로그가 인가함.** 폼 valueList 에만 넣으면 200 검증(vco_run_action)은 통과해도 카탈로그에선 403. `vco_import_data_actions` 가 블루프린트를 스캔하는 이유이기도 함.
