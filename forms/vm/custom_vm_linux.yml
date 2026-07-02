@@ -1216,9 +1216,9 @@ schema:
       - value: 'off'
         label: 사용 안 함
       - value: existing
-        label: 기존 인증서 선택 (네임스페이스 TLS Secret)
+        label: 기존 TLS Secret 선택
       - value: paste
-        label: 인증서 직접 입력 (PEM)
+        label: 인증서 직접 입력(PEM)
   httpsHostname:
     label: HTTPS Hostname
     description: '비우면 <hostname>.<domainname> 사용(SNI).'
@@ -1227,7 +1227,7 @@ schema:
       isMultiple: false
     default: ''
   httpsTlsSecret:
-    label: HTTPS Certificate (기존 TLS Secret)
+    label: HTTPS 인증서(기존 Secret)
     description: '선택한 namespace 의 kubernetes.io/tls Secret 목록. httpsMode=existing 시 필수. (미리 만들어 둔 인증서 Secret 선택)'
     signpost: '네임스페이스에 이미 있는 TLS Secret 을 인증서로 사용합니다.'
     type:

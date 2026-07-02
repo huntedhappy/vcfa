@@ -276,9 +276,9 @@ inputs:
     oneOf:
       - title: 사용 안 함
         const: 'off'
-      - title: 기존 인증서 선택 (네임스페이스 TLS Secret)
+      - title: 기존 TLS Secret 선택
         const: existing
-      - title: 인증서 직접 입력 (PEM)
+      - title: 인증서 직접 입력(PEM)
         const: paste
   httpsHostname:
     type: string

@@ -599,3 +599,18 @@ scripts/win2025-customize.sh <hostname> <new-admin-pass> <static-ip> [gw] [prefi
 - **남은 작업(브라우저/실배포 한정)**: 카탈로그 폼의 실제 렌더링(3-state 표시·조건부 노출)과 required 제출 차단은 UI 에서 최종 확인 권장. httpsMode=existing 으로 실 VM 배포해 Gateway 가 선택 Secret 을 참조하는지 E2E 는 미실행(실 리소스 생성).
 - **중복 방지 메모**: HTTPS 섹션은 **Linux 폼/블루프린트에만** 존재(win 2022/2025 엔 없음). 인증서 드롭다운 액션은 `getTlsSecrets` 하나로 namespace scope.
 - **주의사항**: getTlsSecrets 는 throw 금지(항상 `[]` 로 degrade). 조건부 required 는 hidden 필드 미검증에 의존하지 않고 조건식 자체로 강제.
+
+---
+
+## 2026-07-02 (이어서) — HTTPS 폼 렌더링 개선 + 인증서 드롭다운 "리스트 안 뜸" 원인규명
+
+- **상태**: DONE (라이브 재배포·검증)
+- **배경**: 브라우저 실측 4건 — ① httpsMode 값 라벨 잘림 ② `httpsTlsSecret` 이 리스트가 아니라 텍스트+눈아이콘으로 렌더 ③ 인증서 라벨 길어 `?` 물음표 줄바꿈 ④ Private Key textArea 만 작게.
+- **원인규명(②, 핵심)**: `httpsTlsSecret` 은 동작하는 조건부 동적 드롭다운 `commonDataStorageclass`(getStorageClassOptional)와 **구조·반환포맷 완전 동일**(display:dropDown, Array/Properties, name/id). 유일 차이 = getStorageClassOptional 은 **항상 최소 1개 항목**('비움=상속') 반환→ 절대 안 비는데, getTlsSecrets 는 namespace 미선택/무-secret 시 `[]` 반환. **빈 동적 드롭다운을 이 빌드가 텍스트필드처럼 렌더**한 것. (스크린샷 '필수 입력' 에 Namespace 미선택 상태였음 → `[]`.)
+- **한 일**:
+  - `getTlsSecrets`: 빈 경우에도 안내용 placeholder(id="") 반환 — `(먼저 Namespace 를 선택하세요)` / `(이 Namespace 에 TLS Secret 없음)` 등. → 항상 드롭다운 렌더.
+  - 라벨 단축: httpsMode `기존 TLS Secret 선택` / `인증서 직접 입력(PEM)`, httpsTlsSecret 라벨 `HTTPS 인증서(기존 Secret)` (①③ 완화).
+- **수정한 파일**: [actions/com.vmk.dk/getTlsSecrets.js](../actions/com.vmk.dk/getTlsSecrets.js), [forms/vm/custom_vm_linux.yml](../forms/vm/custom_vm_linux.yml), [blueprints/vm/blueprint_vm_linux.yaml](../blueprints/vm/blueprint_vm_linux.yaml)
+- **검증**: getTlsSecrets 재import OK(200). (a) namespace 미선택→placeholder, (b) hh-ns-zqbhb→실 secret 4개 확인. content_publish→RELEASED `v20260702.050825`.
+- **범위 밖(고칠 수 없음)**: ④ Private Key 크기 — httpsCert/httpsKey 가 폼 YAML 에서 이미 완전 동일(둘 다 textArea)인데 VCFA 가 다르게 렌더 → 폼 파일로 조정 불가(VCFA UI). ③ 의 최종 줄바꿈 위치도 VCFA CSS 소관(라벨 단축으로 완화만).
+- **주의사항**: 동적 드롭다운은 **빈 배열 반환 금지** — 최소 1개 placeholder 로 렌더 유지(이 빌드 특성). getStorageClassOptional 패턴과 동일.

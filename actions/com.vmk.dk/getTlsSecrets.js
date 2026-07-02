@@ -13,15 +13,25 @@ var TLS_TYPE = "kubernetes.io/tls";
 
 var results = [];
 
+// ★ 빈 목록을 그대로 반환하면 이 빌드는 드롭다운을 텍스트필드처럼 렌더함(getStorageClassOptional 은
+//   항상 최소 1개 항목을 반환해 정상 렌더). → 비어있을 땐 안내용 항목 1개(id="") 를 넣어 드롭다운 유지.
+//   id="" 라 existing 필수 검증엔 통과 못 함(사용자에게 선택 유도).
+function placeholder(msg) {
+  var p = new Properties();
+  p.put("name", msg);
+  p.put("id", "");
+  return [p];
+}
+
 if (!ProjectName || String(ProjectName) === "" || !NamespaceName || String(NamespaceName) === "") {
-  System.log("[getTlsSecrets] ProjectName/NamespaceName 미선택 — 빈 목록(먼저 namespace 선택)");
-  return [];
+  System.log("[getTlsSecrets] ProjectName/NamespaceName 미선택 — 안내 placeholder 반환");
+  return placeholder("(먼저 Namespace 를 선택하세요)");
 }
 
 var hosts = Server.findAllForType("VCFA:Host", null);
 if (!hosts || hosts.length === 0) {
-  System.warn("[getTlsSecrets] VCFA:Host 없음 — 빈 목록 반환");
-  return [];
+  System.warn("[getTlsSecrets] VCFA:Host 없음 — placeholder 반환");
+  return placeholder("(VCFA:Host 미등록 — 관리자 확인)");
 }
 var host = hosts[0];
 
@@ -40,8 +50,8 @@ try {
   var nsObj = cciGetJson(rest, nsPath);
   var urn = ((nsObj.metadata || {}).annotations || {})[URN_ANNOT];
   if (!urn) {
-    System.warn("[getTlsSecrets] URN(" + URN_ANNOT + ") 없음 (" + nsPath + ") — 빈 목록 반환");
-    return [];
+    System.warn("[getTlsSecrets] URN(" + URN_ANNOT + ") 없음 (" + nsPath + ") — placeholder 반환");
+    return placeholder("(Namespace URN 확인 불가)");
   }
 
   // ② proxy 로 네임스페이스 secret 리스트 → kubernetes.io/tls 만
@@ -71,9 +81,13 @@ try {
   for (var j = 0; j < results.length; j++) {
     System.log("[getTlsSecrets] " + results[j].get("name"));
   }
+  // 실제 secret 이 없으면 드롭다운이 비어 렌더가 깨지므로 안내 항목으로 대체.
+  if (results.length === 0) {
+    return placeholder("(이 Namespace 에 TLS Secret 없음)");
+  }
   return results;
 
 } catch (e) {
-  System.error("[getTlsSecrets] 오류 발생 — 빈 목록 반환: " + e);
-  return results;
+  System.error("[getTlsSecrets] 오류 발생 — placeholder 반환: " + e);
+  return placeholder("(조회 실패 — Namespace/권한 확인)");
 }
